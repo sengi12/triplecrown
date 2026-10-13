@@ -150,7 +150,9 @@ function gcOwnerOf(pid){
 }
 // The board for any week (the current week reuses the live board).
 function gcBoard(wk){
-  const cur=Math.max(1, Number(TC_SEASON.week||1));
+  // the live board is the TRACKER's week (the finished week holds through Tuesday); another
+  // week — the coming one, asked for on a Tuesday — reads its own board, never that one
+  const cur=(typeof tcBoardWeek==='function') ? tcBoardWeek() : Math.max(1, Number(TC_SEASON.week||1));
   if(wk===cur && typeof tcWeekBoard==='function'){ const b=tcWeekBoard(); if(b && Object.keys(b).length) return b; }
   const key=`${TC_SEASON.year}|${wk}`;
   if(_gc.boards[key]) return _gc.boards[key];

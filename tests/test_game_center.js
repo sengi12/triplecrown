@@ -30,7 +30,7 @@ const app=new Function(code+`
   leagueSnapshot={name:'Dirty Mikes', myUserId:'u1', scoringRaw:{pass_yd:0.04,pass_td:4,pass_int:-1,rush_yd:0.1,rush_td:6,rec:0.5,rec_yd:0.1,fgm:3,xpm:1,pts_allow:-0.1,sack:1,idp_tkl:1,idp_sack:2},
     teamList:[{rosterId:1, ownerId:'u1', owner:'Sengi12', teamName:'Sengi', players:[{id:'q1'},{id:'r2'}]},{rosterId:2, ownerId:'u2', owner:'RichBigMeechy', teamName:'Rich', players:[{id:'w2'}]}]};
   _gcd.tab='stats'; _gcd.side='fantasy';   // the fantasy pane, as before the Feed | Stats tabs
-  return { pts:tcSleeperPoints, mode:gcSetMode, step:gcStep, setPos:gcSetPos, sideClass:gcSideClass, setHub:(r)=>{ hubState.results=r; hubState.loadedAt=Date.now(); leagueSnapshot.leagueId='L1'; }, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc, games:()=>gcGames(gcBoard(1)), mine:gcIsMine, maxW:gcMaxWidth, gameHTML:gcGameHTML, weekOpts:gcWeekOptions, gcWeek, breakdown:tcPointsBreakdown, brkHTML:tcBreakdownHTML, playerHTML:gcPlayerHTML, setScoring:(s)=>{scoringSettings=s;}, setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; } };
+  return { pts:tcSleeperPoints, mode:gcSetMode, step:gcStep, setPos:gcSetPos, sideClass:gcSideClass, setHub:(r)=>{ hubState.results=r; hubState.loadedAt=Date.now(); leagueSnapshot.leagueId='L1'; }, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc, games:()=>gcGames(gcBoard(1)), mine:gcIsMine, maxW:gcMaxWidth, gameHTML:gcGameHTML, weekOpts:gcWeekOptions, gcWeek, board:gcBoard, setHold:(f)=>{tcHoldsFinishedWeek=f;}, setWeek:(w,dw)=>{TC_SEASON.week=w; TC_SEASON.displayWeek=dw;}, breakdown:tcPointsBreakdown, brkHTML:tcBreakdownHTML, playerHTML:gcPlayerHTML, setScoring:(s)=>{scoringSettings=s;}, setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -133,6 +133,11 @@ console.log('=== a game still ahead shows each side with the week\'s projected l
   chk(/gc-ptsbox gc-ptsbox-tap/.test(brow) && /onclick="gcPtsPop\(event,'w1'\)"/.test(brow), 'the points on a row are a tap that opens the breakdown');
   chk(!/gc-ptsbox-tap/.test(app.playerHTML({r:{player_id:'w1', team:'TB', position:'WR', stats:{rec:5}, proj:true}, pts:5.5, line:'', proj:null}, 'home')), 'a projected line has nothing to break down');
 
+  console.log('=== a week the live board is not: its own read, never the tracker week\'s games ===');
+  app.setWeek(2,1); app.setHold(()=>true);
+  const live=app.board(1), ahead=app.board(2);
+  chk(live && Object.keys(live).length>0 && ahead===null, 'on a Tuesday week 1 is the live board; asking for week 2 reads its own (not yet in) instead of handing back week 1');
+  app.setHold(()=>false); app.setWeek(1,null);
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
   process.exit(pass===total?0:1);
 })();

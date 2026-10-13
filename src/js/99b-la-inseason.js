@@ -16,9 +16,19 @@ const LA_MATCHUPS_URL = (lid, wk)=>`https://api.sleeper.app/v1/league/${lid}/mat
 var _laMu = { byWeek:{}, fetching:{}, pollTimer:null, lastSig:'' };
 var _laInsRerenderQueued = false;
 
+// The week the matchup opens on: the tracker's week, which holds the week just played through
+// Tuesday and until Wednesday morning (tcTrackerWeek) — Tuesday is recap day, the matchup is
+// still the one that just finished. The Game Center keeps the same week, so the two agree.
 function laCurrentWeek(){
-  const w = (typeof TC_SEASON!=='undefined') ? Number(TC_SEASON.week||0) : 0;
+  const w = (typeof tcTrackerWeek==='function') ? Number(tcTrackerWeek()||0)
+          : ((typeof TC_SEASON!=='undefined') ? Number(TC_SEASON.week||0) : 0);
   return Math.min(18, Math.max(1, w||1));
+}
+// The week after the recap's, while the recap holds: the coming week's matchup is there to look
+// at (projections, who plays whom) without pretending it is the current one.
+function laNextWeek(){
+  const w = (typeof TC_SEASON!=='undefined') ? Math.min(18, Number(TC_SEASON.week||0)) : 0;
+  return w>laCurrentWeek() ? w : null;
 }
 function laMuWeek(){ return laState.muWeek!=null ? laState.muWeek : laCurrentWeek(); }
 function laSetMuWeek(w){ laState.muWeek = (Number(w)===laCurrentWeek()) ? null : Number(w); laState.muFocus=null; laRerenderKeepScroll(); }
@@ -297,8 +307,9 @@ function _laBindMuHeroSwipe(host){
 function laMatchupView(s){
   if(s.provider==='espn') return _laEspnInseasonNote();
   const wk=laMuWeek(), cur=laCurrentWeek();
+  const nxt=laNextWeek(), top=nxt||cur;
   const weekSel = `<select class="la-tc-sel la-wk-sel" onchange="laSetMuWeek(this.value)">
-    ${Array.from({length:cur},(_,i)=>cur-i).map(w=>`<option value="${w}" ${w===wk?'selected':''}>Week ${w}${w===cur?' · current':''}</option>`).join('')}
+    ${Array.from({length:top},(_,i)=>top-i).map(w=>`<option value="${w}" ${w===wk?'selected':''}>Week ${w}${w===cur?' · current':(w===nxt?' · next':'')}</option>`).join('')}
   </select>`;
   const head = `<div class="la-ins-bar"><span class="la-ins-lbl">MATCHUPS</span>${weekSel}</div>`;
   const data=_laMu.byWeek[wk];

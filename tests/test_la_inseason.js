@@ -9,7 +9,8 @@ global.Chart=function(){return{destroy(){}}};global.confirm=()=>true;global.btoa
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
-  TC_SEASON, laState, laTabViewHTML, laMatchupView, laLivePollSync, laMuWeek,
+  TC_SEASON, laState, laTabViewHTML, laMatchupView, laLivePollSync, laMuWeek, laCurrentWeek, laNextWeek,
+  setHold:(f)=>{tcHoldsFinishedWeek=f;},
   getMu:()=>_laMu, setSnapshot:(s)=>{leagueSnapshot=s;}, setPhaseVar:(p)=>{currentPhase=p;},
   setSleeperFetch:(f)=>{sleeperFetch=f;} };`)();
 
@@ -51,6 +52,16 @@ chk(html.includes('88.2') && html.includes('70.1'),'both totals shown');
 chk(html.includes('My Squad') && html.includes('Rival Club'),'teams resolved from the snapshot');
 chk(html.includes('Alpha Quarterback'),'starters listed by name');
 chk((html.match(/la-mu-game/g)||[]).length===1,'scoreboard shows the one pairing');
+
+console.log('=== Tuesday is recap day: the matchup holds the week just played ===');
+app.TC_SEASON.week=3; app.TC_SEASON.displayWeek=2; app.setHold(()=>true);
+chk(app.laCurrentWeek()===2 && app.laNextWeek()===3, 'through Tuesday the current week is the one just played, and the coming one is "next"');
+app.getMu().byWeek[2]={fetchedAt:Date.now(), sig:'s', rows:[]};
+const tueSel=app.laMatchupView(SNAP);
+chk(/Week 3 · next/.test(tueSel) && /Week 2 · current/.test(tueSel), 'the picker offers the coming week as next and marks the recap week current');
+app.setHold(()=>false);
+chk(app.laCurrentWeek()===3 && app.laNextWeek()===null, 'from Wednesday the coming week is current and there is no next');
+app.TC_SEASON.displayWeek=null; app.TC_SEASON.week=2; delete app.getMu().byWeek[2];
 
 console.log('=== ESPN empty state ===');
 const espn=Object.assign({}, SNAP, {provider:'espn'});
