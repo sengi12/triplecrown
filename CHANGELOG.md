@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-13
 
+- fix(analyzer): Tuesday is recap day — the Matchup tab holds the week just played until Wednesday morning (the Game Center's tracker week), with the coming week in the picker as "next"; and a week's swing chart reads that week's own board, so week 6 no longer replays week 5's plays (#178)
 - feat(analyzer): the swing chart replays the week — a Replay button sweeps the line from the first kickoff with the swings appearing as it passes them and a readout of the chance, points and projections, a scrubber steps to any play — and on a desktop the drawing is 960 wide with the recap beside it instead of a phone card stretched across the page; the block no longer waits on the 45-second poll to notice the week's board has landed (#177)
 
 ## 2026-10-12
