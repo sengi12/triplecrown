@@ -6,6 +6,10 @@ this file is the merge history, newest first, one line per PR. Add a line when a
 
 Open work lives in [TODO.md](TODO.md).
 
+## 2026-10-14
+
+- fix(ol): one scorer for every offensive-line surface — the QB card's Offensive Line tab, the rushing fan's run-blocking banner and the team page's O-Line card all read the weekly recompute over the weeks a season has (the QB card showed the preseason projection all year, the fan the builder's season table; the Bengals read 63.9/#21, 55/#13 and 51.0 at once); the projection stays on the QB card as a labeled comparison, and the letters say whether they are pass- or run-block grades (#180)
+
 ## 2026-10-13
 
 - feat(team): the Power Score badge on a team page carries "all teams ›" — one tap to the league's Power Score through the season with that team's line lit, instead of Team → Adv Metrics → League → SOS → Power Score (#179)
