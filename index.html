@@ -20548,10 +20548,18 @@ function renderPcardRbFan(pid){
   }
   const pack=NFLVERSE[season]||{};
   const teamCode=_rbTeamCode(chart.team||'');
-  const runTbl=pack.team&&pack.team.offensive_line_run;
+  // The scorer every surface shares (74-team-tabs olSeasonTables): the weekly recompute —
+  // the same number as the team page's run-blocking chip — the builder's table only for a
+  // season the weekly sidecar does not cover.
+  const shared=(!_rbIsProjSeason(season) && typeof olSeasonTables==='function') ? olSeasonTables(season) : null;
+  const weeklyRun=(shared && shared.source==='weekly' && shared.runTbl) ? shared.runTbl : null;
+  if(!weeklyRun && !_rbIsProjSeason(season) && typeof olEnsureWeekly==='function')
+    olEnsureWeekly(season, ()=>{ try{ if(pcardState && String(pcardRbFanSeason)===season && typeof setPcardRbFanSeason==='function') setPcardRbFanSeason(season); }catch(e){} });
+  const runTbl=weeklyRun || (pack.team&&pack.team.offensive_line_run);
   const runSc=(_rbIsProjSeason(season) && chart.is_projection)
     ? {score:chart.run_score, rank:chart.run_rank}
     : _rbRunScoreAndRankFromTable(runTbl, teamCode);
+  const runWin=(weeklyRun && shared.hi<18) ? ` · thru wk ${shared.hi}` : '';
   // A selected game: the line's run blocking THAT week, ranked against the other 31 lines
   // that week, with the season-to-date number beside it — both from the same windowed
   // recompute the team card's week slider uses (74-team-tabs), so they compare like for like.
@@ -20565,9 +20573,7 @@ function renderPcardRbFan(pid){
       if(all && all.runTbl) wkSeasonSc=_rbRunScoreAndRankFromTable(all.runTbl, teamCode);
     }catch(e){ wkSc=null; }
   }
-  const overallRunHtml = (runSc.score!=null || runSc.rank!=null)
-    ? `<div class="olc-overview"><b>Cumulative Run Blocking Score: ${runSc.score!=null?runSc.score.toFixed(1):'—'}</b> ${_rbRankBadge(runSc.rank)}</div>`
-    : '';
+  // the season banner is rendered in the template below, beside the selected game's
 
   const p=(sleeperPlayers&&sleeperPlayers[pid])||{};
   const name=p.name||'RB';
@@ -20605,7 +20611,7 @@ function renderPcardRbFan(pid){
     </div>
     ${hasMap?`<div class="rt-head rt-viewrow"><div class="rt-metrics">${viewBtns}</div>${_summary}</div>`:''}
     ${(hasMap && !mapOn)?`<div class="rt-head rt-metricrow"><div class="rt-metrics">${metricBtns}</div></div>`:''}
-    ${(wkSc && wkSc.score!=null) ? `<div class="olc-overview">${noteWrapHtml(`<b>Run Blocking · WK ${_wkGame.wk}${_wkGame.opp?' '+(_pcardGameLabel(_wkGame, teamCode).text.includes('@')?'@':'vs')+' '+_wkGame.opp:''}: ${wkSc.score.toFixed(1)}</b> ${_rbRankBadge(wkSc.rank)}`, { label:`Run Blocking Score (week ${_wkGame.wk})`, value:`${wkSc.score.toFixed(1)} · rank ${wkSc.rank!=null?'#'+wkSc.rank:'—'}`, source:'rb_rushing_fan', statKey:'run_block_week', context:`${season} week ${_wkGame.wk} run blocking`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}${(wkSeasonSc && wkSeasonSc.score!=null) ? ` <span class="olc-rank-muted">· season ${wkSeasonSc.score.toFixed(1)}${wkSeasonSc.rank!=null?` (#${wkSeasonSc.rank})`:''}</span>` : ''}</div>` : (runSc.score!=null || runSc.rank!=null ? `<div class="olc-overview">${noteWrapHtml(`<b>Cumulative Run Blocking Score: ${runSc.score!=null?runSc.score.toFixed(1):'—'}</b> ${_rbRankBadge(runSc.rank)}`, { label:'Cumulative Run Blocking Score', value:runSc.score!=null?runSc.score.toFixed(1):'—', source:'rb_offensive_line', statKey:'run_blocking_score', context:`${chart.team||notePlayer.team} offensive line · ${(_rbIsProjSeason(season) && chart.is_projection)?`${_rbProjYear()} projections`:`${season}`}`, team:chart.team||notePlayer.team, relevance:'RB' }, 'note-tag-hit')}</div>` : '')}
+    ${(wkSc && wkSc.score!=null) ? `<div class="olc-overview">${noteWrapHtml(`<b>Run Blocking · WK ${_wkGame.wk}${_wkGame.opp?' '+(_pcardGameLabel(_wkGame, teamCode).text.includes('@')?'@':'vs')+' '+_wkGame.opp:''}: ${wkSc.score.toFixed(1)}</b> ${_rbRankBadge(wkSc.rank)}`, { label:`Run Blocking Score (week ${_wkGame.wk})`, value:`${wkSc.score.toFixed(1)} · rank ${wkSc.rank!=null?'#'+wkSc.rank:'—'}`, source:'rb_rushing_fan', statKey:'run_block_week', context:`${season} week ${_wkGame.wk} run blocking`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}${(wkSeasonSc && wkSeasonSc.score!=null) ? ` <span class="olc-rank-muted">· season ${wkSeasonSc.score.toFixed(1)}${wkSeasonSc.rank!=null?` (#${wkSeasonSc.rank})`:''}</span>` : ''}</div>` : (runSc.score!=null || runSc.rank!=null ? `<div class="olc-overview">${noteWrapHtml(`<b>Cumulative Run Blocking Score${runWin}: ${runSc.score!=null?runSc.score.toFixed(1):'—'}</b> ${_rbRankBadge(runSc.rank)}`, { label:'Cumulative Run Blocking Score', value:runSc.score!=null?runSc.score.toFixed(1):'—', source:'rb_offensive_line', statKey:'run_blocking_score', context:`${chart.team||notePlayer.team} offensive line · ${(_rbIsProjSeason(season) && chart.is_projection)?`${_rbProjYear()} projections`:`${season}`}`, team:chart.team||notePlayer.team, relevance:'RB' }, 'note-tag-hit')}<div class="pcard-src" style="margin-top:4px">${weeklyRun?'The same number as the team page\'s run-blocking chip. ':''}Letters on the line are run-block grades; the pass-block grades are on the quarterback\'s card.</div></div>` : '')}
     ${chart.is_projection?`<div class="olc-overview"><b>${_rbProjYear()} projection</b> · projected starters drive the line${chart.baseline_run_rank!=null?` (${chart.baselineSeason}: #${chart.baseline_run_rank})`:''}</div>${typeof _olProjCoverageNote==='function'?_olProjCoverageNote():''}`:''}
     ${mapOn ? rbCarryMapBlock(name, _wnode, season, _selWk, mapLabel, mapTag) : `${_rbFanSVG(chart, name, season, metric, notePlayer)}
     <div class="rbf-legend">
@@ -22156,10 +22162,19 @@ function renderPcardQbOl(pid){
   const noteCtx = _olIsProjSeason(season) ? `${season} projections · QB OL` : `${season} QB OL`;
 
   const proj=_olIsProjSeason(season) ? (_olProjectedTeamNext()[teamCode]||null) : null;
-  const passTbl=proj ? proj.passTbl : (pack.team&&pack.team.offensive_line_pass);
+  // The scorer every surface shares (74-team-tabs olSeasonTables): the weekly recompute once
+  // the season has weeks in it — the same numbers as the team page's O-Line card — with the
+  // preseason projection kept above it as the comparison. Before the first week, or for a
+  // season the weekly sidecar does not cover, the projection / the builder's table stand in.
+  const shared=(typeof olSeasonTables==='function') ? olSeasonTables(season) : null;
+  const weekly=(shared && shared.source==='weekly' && shared.passTbl && shared.passTbl.teams && shared.passTbl.teams[teamCode]) ? shared : null;
+  if(!weekly && typeof olEnsureWeekly==='function' && !(proj && (typeof olSeasonHi!=='function' || olSeasonHi(season)===0)))
+    olEnsureWeekly(season, ()=>{ try{ if(pcardState && String(pcardQbOlSeason)===season) setPcardQbOlSeason(season); }catch(e){} });
+  const passTbl=weekly ? weekly.passTbl : (proj ? proj.passTbl : (pack.team&&pack.team.offensive_line_pass));
   const row=passTbl&&passTbl.teams&&passTbl.teams[teamCode];
   const cols=(passTbl&&passTbl.columns)||[];
   if(!row || !cols.length) return '<div class="pcard-loading">No team pass-protection table found for this season.</div>';
+  const projRow=(proj && proj.passTbl && proj.passTbl.teams) ? (proj.passTbl.teams[teamCode]||null) : null;
 
   const line=(proj&&proj.line) ? proj.line : _olLineByTeamSeason(season, teamCode);
   const slotCards=['LT','LG','C','RG','RT'].map(sl=>{
@@ -22193,15 +22208,15 @@ function renderPcardQbOl(pid){
     const basePack=NFLVERSE[String(proj.baselineSeason)]||{};
     const baseTbl=basePack.team&&basePack.team.offensive_line_pass;
     const baseRow=baseTbl&&baseTbl.teams&&baseTbl.teams[teamCode];
-    const projScore=row.values?row.values['Overall Score']:null;
-    const projRank=row.ranks?row.ranks['Overall Score']:null;
+    const projScore=(projRow||row).values?(projRow||row).values['Overall Score']:null;
+    const projRank=(projRow||row).ranks?(projRow||row).ranks['Overall Score']:null;
     const baseScore=baseRow&&baseRow.values?baseRow.values['Overall Score']:null;
     const baseRank=baseRow&&baseRow.ranks?baseRow.ranks['Overall Score']:null;
     projOverallHtml = `<div class="olc-metrics" style="margin-bottom:8px">`
       + `<div class="olc-metric"><label>Proj ${OL_PROJ_SEASON}</label><b>${noteWrapHtml(escHtml(_olFmtMetric('Overall Score', projScore)), { label:`Proj ${OL_PROJ_SEASON} Pass Protection Score`, value:`${_olFmtMetric('Overall Score', projScore)}${projRank!=null?` · league rank #${projRank}`:''}`, source:'qb_ol_context', statKey:'proj_overall_score', context:`${teamDisplayName(teamCode)||teamCode} pass protection · ${OL_PROJ_SEASON} projections`, player:notePlayer, team:teamCode, relevance:'QB', nav:{ type:'advanced', team:teamCode, season:'proj' } }, 'note-tag-hit')}</b><small>${_olRankBadge(projRank)}</small></div>`
       + `<div class="olc-metric"><label>${proj.baselineSeason}</label><b>${noteWrapHtml(escHtml(_olFmtMetric('Overall Score', baseScore)), { label:`${proj.baselineSeason} Pass Protection Score`, value:`${_olFmtMetric('Overall Score', baseScore)}${baseRank!=null?` · league rank #${baseRank}`:''}`, source:'qb_ol_context', statKey:'base_overall_score', context:`${teamDisplayName(teamCode)||teamCode} pass protection · ${proj.baselineSeason}`, player:notePlayer, team:teamCode, relevance:'QB', nav:{ type:'advanced', team:teamCode, season:String(proj.baselineSeason) } }, 'note-tag-hit')}</b><small>${_olRankBadge(baseRank)}</small></div>`
       + `</div>`;
-    metricColsUse=metricColsUse.filter(c=>c!=='Overall Score');
+    if(!weekly) metricColsUse=metricColsUse.filter(c=>c!=='Overall Score');
     projOverallHtml += _olProjCoverageNote();
   }
 
@@ -22224,16 +22239,17 @@ function renderPcardQbOl(pid){
   return `<div class="olc-wrap">
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
-      <div class="rt-summary">${teamDisplayName(teamCode)||teamCode} · ${proj?'projected ':'pass protection '}context for ${p.name||'QB'}</div>
+      <div class="rt-summary">${teamDisplayName(teamCode)||teamCode} · ${(proj && !weekly)?'projected ':'pass protection '}context for ${p.name||'QB'}</div>
     </div>
     ${projNote}
     ${overallPassHtml}
     <div class="olc-team-head">${teamDisplayName(teamCode)||teamCode} Offensive Line (Pass Protection)</div>
     <div class="olc-qb-slot-grid">${slotCards}</div>
-    <div class="olc-team-head" style="margin-top:10px">Team Pass Protection Metrics (${season})</div>
+    <div class="pcard-src">Letters are pass-block grades; the same line's run-block grades are on a back's rushing fan.</div>
+    <div class="olc-team-head" style="margin-top:10px">Team Pass Protection Metrics (${season}${weekly&&weekly.hi<18?` · thru wk ${weekly.hi}`:''})</div>
     ${projOverallHtml}
     <div class="olc-metrics">${teamMetrics}</div>
-    <div class="pcard-src">${proj?`Projected starters from ${OL_PROJ_SEASON} depth chart, adjusted from prior team OL performance using starter quality deltas.`:'Linemen from this season\'s team context; pass grades from the OL pipeline.'}</div>
+    <div class="pcard-src">${weekly?`Season to date, weeks ${weekly.lo}–${weekly.hi}, from the weekly line sidecar — the same numbers as the team page's O-Line card${proj?'; the preseason projection sits above for comparison':''}.`:proj?`Projected starters from ${OL_PROJ_SEASON} depth chart, adjusted from prior team OL performance using starter quality deltas.`:'Linemen from this season\'s team context; pass grades from the OL pipeline.'}</div>
   </div>`;
 }
 
@@ -26916,6 +26932,44 @@ function _advRankMap(valuesByTeam, lowerBetter){
 function _advNum(v, dp){
   if(v==null || !Number.isFinite(v)) return null;
   return Number(v.toFixed(dp));
+}
+// ── The one offensive-line scorer ────────────────────────────────────────────
+// Every surface that names a line's score — the team card, the QB card's Offensive Line
+// tab, the rushing fan's run-blocking banner — reads the SAME windowed recompute over the
+// weekly sidecar: weeks 1–18 of a finished season, 1 to the completed weeks of the one in
+// progress. Three surfaces used to read three sources (the preseason projection, this
+// recompute, the builder's season-level table) and showed three numbers for one line. The
+// builder's tables (team.offensive_line_pass / _run) stand in only for a season the weekly
+// sidecar does not cover, and the card says which it is reading.
+function olSeasonHi(season){
+  const live = typeof tcIsLiveSeason==='function' && tcIsLiveSeason(String(season));
+  if(!live) return 18;
+  return Math.max(0, (typeof completedWeeks==='function') ? completedWeeks() : 0);
+}
+function olSeasonTables(season){
+  season=String(season);
+  const pack=(typeof NFLVERSE!=='undefined' && NFLVERSE && NFLVERSE[season]) || null;
+  if(!pack) return null;
+  const hi=olSeasonHi(season);
+  if(pack.ol_weekly && hi>0){
+    const agg=_advComputeOlRangeTables(season, 1, hi);
+    if(agg && agg.passTbl && agg.runTbl) return {passTbl:agg.passTbl, runTbl:agg.runTbl, lo:1, hi, source:'weekly'};
+  }
+  const t=pack.team||{};
+  if(t.offensive_line_pass || t.offensive_line_run) return {passTbl:t.offensive_line_pass||null, runTbl:t.offensive_line_run||null, lo:null, hi:null, source:'season'};
+  return null;
+}
+// A card showing a season the weekly sidecar has not loaded for: ask for it once, repaint
+// the card when it lands.
+var _olWeeklyKick={};
+function olEnsureWeekly(season, onReady){
+  season=String(season);
+  if(typeof ensureNflverseSection!=='function') return false;
+  const pack=(typeof NFLVERSE!=='undefined' && NFLVERSE && NFLVERSE[season]) || null;
+  if((pack && pack.ol_weekly) || _olWeeklyKick[season]) return false;
+  _olWeeklyKick[season]=true;
+  Promise.resolve(ensureNflverseSection('ol_weekly', season)).then(ok=>{ if(ok && onReady) onReady(); }).catch(()=>{}).finally(()=>{ _olWeeklyKick[season]=false; });
+  return true;
 }
 function _advComputeOlRangeTables(season, lo, hi){
   const cacheKey=`${season}:${lo}-${hi}`;

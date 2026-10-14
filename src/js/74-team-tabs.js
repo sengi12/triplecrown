@@ -365,6 +365,44 @@ function _advNum(v, dp){
   if(v==null || !Number.isFinite(v)) return null;
   return Number(v.toFixed(dp));
 }
+// ── The one offensive-line scorer ────────────────────────────────────────────
+// Every surface that names a line's score — the team card, the QB card's Offensive Line
+// tab, the rushing fan's run-blocking banner — reads the SAME windowed recompute over the
+// weekly sidecar: weeks 1–18 of a finished season, 1 to the completed weeks of the one in
+// progress. Three surfaces used to read three sources (the preseason projection, this
+// recompute, the builder's season-level table) and showed three numbers for one line. The
+// builder's tables (team.offensive_line_pass / _run) stand in only for a season the weekly
+// sidecar does not cover, and the card says which it is reading.
+function olSeasonHi(season){
+  const live = typeof tcIsLiveSeason==='function' && tcIsLiveSeason(String(season));
+  if(!live) return 18;
+  return Math.max(0, (typeof completedWeeks==='function') ? completedWeeks() : 0);
+}
+function olSeasonTables(season){
+  season=String(season);
+  const pack=(typeof NFLVERSE!=='undefined' && NFLVERSE && NFLVERSE[season]) || null;
+  if(!pack) return null;
+  const hi=olSeasonHi(season);
+  if(pack.ol_weekly && hi>0){
+    const agg=_advComputeOlRangeTables(season, 1, hi);
+    if(agg && agg.passTbl && agg.runTbl) return {passTbl:agg.passTbl, runTbl:agg.runTbl, lo:1, hi, source:'weekly'};
+  }
+  const t=pack.team||{};
+  if(t.offensive_line_pass || t.offensive_line_run) return {passTbl:t.offensive_line_pass||null, runTbl:t.offensive_line_run||null, lo:null, hi:null, source:'season'};
+  return null;
+}
+// A card showing a season the weekly sidecar has not loaded for: ask for it once, repaint
+// the card when it lands.
+var _olWeeklyKick={};
+function olEnsureWeekly(season, onReady){
+  season=String(season);
+  if(typeof ensureNflverseSection!=='function') return false;
+  const pack=(typeof NFLVERSE!=='undefined' && NFLVERSE && NFLVERSE[season]) || null;
+  if((pack && pack.ol_weekly) || _olWeeklyKick[season]) return false;
+  _olWeeklyKick[season]=true;
+  Promise.resolve(ensureNflverseSection('ol_weekly', season)).then(ok=>{ if(ok && onReady) onReady(); }).catch(()=>{}).finally(()=>{ _olWeeklyKick[season]=false; });
+  return true;
+}
 function _advComputeOlRangeTables(season, lo, hi){
   const cacheKey=`${season}:${lo}-${hi}`;
   if(_advOlRangeCache[cacheKey]) return _advOlRangeCache[cacheKey];

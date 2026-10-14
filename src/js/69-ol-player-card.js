@@ -1181,10 +1181,19 @@ function renderPcardQbOl(pid){
   const noteCtx = _olIsProjSeason(season) ? `${season} projections · QB OL` : `${season} QB OL`;
 
   const proj=_olIsProjSeason(season) ? (_olProjectedTeamNext()[teamCode]||null) : null;
-  const passTbl=proj ? proj.passTbl : (pack.team&&pack.team.offensive_line_pass);
+  // The scorer every surface shares (74-team-tabs olSeasonTables): the weekly recompute once
+  // the season has weeks in it — the same numbers as the team page's O-Line card — with the
+  // preseason projection kept above it as the comparison. Before the first week, or for a
+  // season the weekly sidecar does not cover, the projection / the builder's table stand in.
+  const shared=(typeof olSeasonTables==='function') ? olSeasonTables(season) : null;
+  const weekly=(shared && shared.source==='weekly' && shared.passTbl && shared.passTbl.teams && shared.passTbl.teams[teamCode]) ? shared : null;
+  if(!weekly && typeof olEnsureWeekly==='function' && !(proj && (typeof olSeasonHi!=='function' || olSeasonHi(season)===0)))
+    olEnsureWeekly(season, ()=>{ try{ if(pcardState && String(pcardQbOlSeason)===season) setPcardQbOlSeason(season); }catch(e){} });
+  const passTbl=weekly ? weekly.passTbl : (proj ? proj.passTbl : (pack.team&&pack.team.offensive_line_pass));
   const row=passTbl&&passTbl.teams&&passTbl.teams[teamCode];
   const cols=(passTbl&&passTbl.columns)||[];
   if(!row || !cols.length) return '<div class="pcard-loading">No team pass-protection table found for this season.</div>';
+  const projRow=(proj && proj.passTbl && proj.passTbl.teams) ? (proj.passTbl.teams[teamCode]||null) : null;
 
   const line=(proj&&proj.line) ? proj.line : _olLineByTeamSeason(season, teamCode);
   const slotCards=['LT','LG','C','RG','RT'].map(sl=>{
@@ -1218,15 +1227,15 @@ function renderPcardQbOl(pid){
     const basePack=NFLVERSE[String(proj.baselineSeason)]||{};
     const baseTbl=basePack.team&&basePack.team.offensive_line_pass;
     const baseRow=baseTbl&&baseTbl.teams&&baseTbl.teams[teamCode];
-    const projScore=row.values?row.values['Overall Score']:null;
-    const projRank=row.ranks?row.ranks['Overall Score']:null;
+    const projScore=(projRow||row).values?(projRow||row).values['Overall Score']:null;
+    const projRank=(projRow||row).ranks?(projRow||row).ranks['Overall Score']:null;
     const baseScore=baseRow&&baseRow.values?baseRow.values['Overall Score']:null;
     const baseRank=baseRow&&baseRow.ranks?baseRow.ranks['Overall Score']:null;
     projOverallHtml = `<div class="olc-metrics" style="margin-bottom:8px">`
       + `<div class="olc-metric"><label>Proj ${OL_PROJ_SEASON}</label><b>${noteWrapHtml(escHtml(_olFmtMetric('Overall Score', projScore)), { label:`Proj ${OL_PROJ_SEASON} Pass Protection Score`, value:`${_olFmtMetric('Overall Score', projScore)}${projRank!=null?` · league rank #${projRank}`:''}`, source:'qb_ol_context', statKey:'proj_overall_score', context:`${teamDisplayName(teamCode)||teamCode} pass protection · ${OL_PROJ_SEASON} projections`, player:notePlayer, team:teamCode, relevance:'QB', nav:{ type:'advanced', team:teamCode, season:'proj' } }, 'note-tag-hit')}</b><small>${_olRankBadge(projRank)}</small></div>`
       + `<div class="olc-metric"><label>${proj.baselineSeason}</label><b>${noteWrapHtml(escHtml(_olFmtMetric('Overall Score', baseScore)), { label:`${proj.baselineSeason} Pass Protection Score`, value:`${_olFmtMetric('Overall Score', baseScore)}${baseRank!=null?` · league rank #${baseRank}`:''}`, source:'qb_ol_context', statKey:'base_overall_score', context:`${teamDisplayName(teamCode)||teamCode} pass protection · ${proj.baselineSeason}`, player:notePlayer, team:teamCode, relevance:'QB', nav:{ type:'advanced', team:teamCode, season:String(proj.baselineSeason) } }, 'note-tag-hit')}</b><small>${_olRankBadge(baseRank)}</small></div>`
       + `</div>`;
-    metricColsUse=metricColsUse.filter(c=>c!=='Overall Score');
+    if(!weekly) metricColsUse=metricColsUse.filter(c=>c!=='Overall Score');
     projOverallHtml += _olProjCoverageNote();
   }
 
@@ -1249,16 +1258,17 @@ function renderPcardQbOl(pid){
   return `<div class="olc-wrap">
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
-      <div class="rt-summary">${teamDisplayName(teamCode)||teamCode} · ${proj?'projected ':'pass protection '}context for ${p.name||'QB'}</div>
+      <div class="rt-summary">${teamDisplayName(teamCode)||teamCode} · ${(proj && !weekly)?'projected ':'pass protection '}context for ${p.name||'QB'}</div>
     </div>
     ${projNote}
     ${overallPassHtml}
     <div class="olc-team-head">${teamDisplayName(teamCode)||teamCode} Offensive Line (Pass Protection)</div>
     <div class="olc-qb-slot-grid">${slotCards}</div>
-    <div class="olc-team-head" style="margin-top:10px">Team Pass Protection Metrics (${season})</div>
+    <div class="pcard-src">Letters are pass-block grades; the same line's run-block grades are on a back's rushing fan.</div>
+    <div class="olc-team-head" style="margin-top:10px">Team Pass Protection Metrics (${season}${weekly&&weekly.hi<18?` · thru wk ${weekly.hi}`:''})</div>
     ${projOverallHtml}
     <div class="olc-metrics">${teamMetrics}</div>
-    <div class="pcard-src">${proj?`Projected starters from ${OL_PROJ_SEASON} depth chart, adjusted from prior team OL performance using starter quality deltas.`:'Linemen from this season\'s team context; pass grades from the OL pipeline.'}</div>
+    <div class="pcard-src">${weekly?`Season to date, weeks ${weekly.lo}–${weekly.hi}, from the weekly line sidecar — the same numbers as the team page's O-Line card${proj?'; the preseason projection sits above for comparison':''}.`:proj?`Projected starters from ${OL_PROJ_SEASON} depth chart, adjusted from prior team OL performance using starter quality deltas.`:'Linemen from this season\'s team context; pass grades from the OL pipeline.'}</div>
   </div>`;
 }
 
