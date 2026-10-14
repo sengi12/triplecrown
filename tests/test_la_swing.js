@@ -11,7 +11,7 @@ global.Chart=function(){return{destroy(){}}};global.confirm=()=>true;global.btoa
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
-  laSwingBuild, laSwingSVG, laSwingRecapHTML, laSwingPlayEvents, laSwingGameFrac, laSwingWindows, laSwingX, laSwingSectionHTML, laSwingDrawWidth, laState,
+  laSwingBuild, laSwingSVG, laSwingRecapHTML, laSwingPlayEvents, laSwingGameFrac, laSwingWindows, laSwingX, laSwingSectionHTML, laSwingDrawWidth, laSwingPhrase, laState,
   setPlayers:(s)=>{sleeperPlayers=s;}, setSnapshot:(s)=>{leagueSnapshot=s;}, setSleeperFetch:(f)=>{sleeperFetch=f;} };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const near=(a,b,e)=>Math.abs(a-b)<(e||1e-6);
@@ -82,6 +82,12 @@ chk(app.laSwingDrawWidth()===960, 'the drawing width follows the viewport: 960 f
 global.window.innerWidth=390;
 chk(app.laSwingDrawWidth()===640, '… and 640 on a phone');
 
+console.log('=== the highlights: words, dots, a callout to pin them to ===');
+chk(app.laSwingPhrase({kind:'recTd', yds:42})==='42 yard TD catch!' && app.laSwingPhrase({kind:'rushTd', yds:11})==='11 yard TD run!' && app.laSwingPhrase({kind:'int'})==='Intercepted' && app.laSwingPhrase({kind:'other', title:'Fumble! X'})==='Fumble! X',
+    'a swing reads like a broadcast card: the yards and the play, no name');
+chk(B.keys.every(k=>Number.isInteger(k.i) && B.series[k.i]===k), 'every swing knows its place on the scrubber');
+chk(/data-i="0"[^>]*onclick="laSwingMarkTap\(event,0\)"/.test(svg), 'a tap on a pinned mark opens its highlight');
+
 console.log('=== plays from an ESPN summary ===');
 app.setPlayers({p1:{name:'Joe Burrow', team:'CIN', pos:'QB'}, p2:{name:"Ja'Marr Chase", team:'CIN', pos:'WR'}});
 const SUM={drives:{previous:[{team:{abbreviation:'CIN'}, plays:[
@@ -92,6 +98,7 @@ const ev=app.laSwingPlayEvents(SUM, 'e1');
 chk(ev.length===2 && ev[0].kind==='rec' && ev[0].stats.p1 && ev[0].stats.p1.pass_yd===25 && ev[0].stats.p2 && ev[0].stats.p2.rec_yd===25 && ev[0].stats.p2.rec===1,
     'a reception is read for the passer and the receiver by Sleeper id; the timeout is dropped');
 chk(ev[1].kind==='final' && ev[1].at===Date.parse('2026-10-11T20:00:00Z') && ev[0].at===Date.parse('2026-10-11T17:05:00Z'), 'the end of the game is an event with its wall clock');
+chk(ev[0].yds===25, 'a play carries its yards for the highlight');
 
 console.log('=== in the card ===');
 app.laState.swingHide=false;

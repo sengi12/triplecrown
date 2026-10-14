@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-14
 
+- feat(analyzer): the swing replay shows the highlights — a callout per swing with the player's headshot and the play in his club's colour, the clock holding on each — and the hero's scores, projections and win bar move with the sweep; the scrubber carries a dot per swing, a tap on a dot or a pinned mark opens its highlight (#181)
 - fix(ol): one scorer for every offensive-line surface — the QB card's Offensive Line tab, the rushing fan's run-blocking banner and the team page's O-Line card all read the weekly recompute over the weeks a season has (the QB card showed the preseason projection all year, the fan the builder's season table; the Bengals read 63.9/#21, 55/#13 and 51.0 at once); the projection stays on the QB card as a labeled comparison, and the letters say whether they are pass- or run-block grades (#180)
 
 ## 2026-10-13
