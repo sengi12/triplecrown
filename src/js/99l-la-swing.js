@@ -39,7 +39,7 @@ function laSwingPlayEvents(sum, eid){
     if(p.kind==='final'){ out.push({eid:String(eid), at:p.at||0, q:p.q, clock:p.clock, kind:'final', title:'Final', stats:{}, roles:{}}); return; }
     if(typeof GC_PAUSE_KINDS!=='undefined' && GC_PAUSE_KINDS.has(p.kind)) return;
     const read=(typeof lfReadPlay==='function') ? lfReadPlay({id:p.id, type:p.type, text:p.text, yds:p.yds, team:p.team, athletes:[]}) : {kind:'other', title:p.text, stats:{}, roles:{}};
-    out.push({eid:String(eid), at:p.at||0, q:p.q, clock:p.clock, kind:read.kind, title:read.title, stats:read.stats||{}, roles:read.roles||{}, team:p.team||'', text:p.text||''});
+    out.push({eid:String(eid), at:p.at||0, q:p.q, clock:p.clock, kind:read.kind, title:read.title, stats:read.stats||{}, roles:read.roles||{}, team:p.team||'', text:p.text||'', yds:Number(p.yds||0)});
   });
   return out;
 }
@@ -156,7 +156,7 @@ function laSwingBuild(inp){
     }
     T=totals(); const np=pOf(T);
     const pt={t:e.at, p:np, dp:np-pClock, mine:T.minePts+T.mineRem, opp:T.oppPts+T.oppRem, pts:{mine:T.minePts, opp:T.oppPts}};
-    if(pid){ pt.pid=pid; pt.side=side[pid]; pt.delta=Math.round(delta*100)/100; pt.title=e.title||''; pt.kind=e.kind; }
+    if(pid){ pt.pid=pid; pt.side=side[pid]; pt.delta=Math.round(delta*100)/100; pt.title=e.title||''; pt.kind=e.kind; pt.yds=Number(e.yds||0); }
     else if(e.kind==='final'){ pt.final=e.eid; }
     series.push(pt); p=np;
   });
@@ -164,6 +164,7 @@ function laSwingBuild(inp){
   // the swings: the plays that moved the chance most, pinned to the line
   const keys=series.filter(s=>s.pid && Math.abs(s.dp)>=LA_SWING_KEY_MIN)
     .sort((a,b)=>Math.abs(b.dp)-Math.abs(a.dp)).slice(0, LA_SWING_KEYS).sort((a,b)=>a.t-b.t);
+  keys.forEach(k=>{ k.i=series.indexOf(k); });   // where each swing sits on the scrubber
   const windows=laSwingWindows(series.map(s=>s.t));
   // the kickoff slates, for the axis: Thu 8pm · Sun 1pm · Sun 4pm · Sun 8pm · Mon 8pm
   const lastT=series[series.length-1].t;
@@ -216,7 +217,7 @@ function laSwingSVG(built, ctx){
     const sign=(k.dp>0?'+':'−')+Math.round(Math.abs(k.dp)*100)+'%';
     const tip=`${k.title||'Play'} · ${k.delta>0?'+':''}${k.delta} pts · ${sign} to win`;
     const id=`laswc${i}`;
-    return `<g class="la-swing-mark ${my?'la-swing-mine':'la-swing-opp'} ${up?'la-swing-up':'la-swing-dn'}" data-x="${cx.toFixed(1)}" ${k.pid?`onclick="pcardOnclick(${JSON.stringify(k.pid)},'','')"`:''}>
+    return `<g class="la-swing-mark ${my?'la-swing-mine':'la-swing-opp'} ${up?'la-swing-up':'la-swing-dn'}" data-x="${cx.toFixed(1)}" data-i="${i}" onclick="laSwingMarkTap(event,${i})">
       <title>${escHtml(tip)}</title>
       <line class="la-swing-stem" x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${cy.toFixed(1)}" y2="${ry.toFixed(1)}"/>
       <circle class="la-swing-dot" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4"/>
@@ -282,14 +283,14 @@ function laSwingInputs(wk, a, b, o){
   const meta=o.meta, pm=o.pm, dvp=o.dvp;
   const starters=(row)=>(row.starters||[]).filter(x=>x&&x!=='0').map(String);
   const mine=starters(a), opp=starters(b);
-  const proj={}, teamOf={}, pos={}, games={}, actualFinal={}, names={};
+  const proj={}, teamOf={}, pos={}, games={}, actualFinal={}, names={}, who={};
   const plays=[]; let pending=0;
   const pidPts=(row)=>{ const m={}; (row.starters||[]).forEach((pid,i)=>{ if(pid&&pid!=='0') m[String(pid)]=Number((row.starters_points||[])[i]||0); }); return m; };
   const ptsA=pidPts(a), ptsB=pidPts(b);
   [[mine,ptsA],[opp,ptsB]].forEach(([ids,pm2])=>ids.forEach(pid=>{
     const p=(typeof _laPidMeta==='function') ? _laPidMeta(meta, pid) : {id:pid};
     const adj=(typeof laAdjWeekProj==='function') ? laAdjWeekProj(p, wk, pm, dvp) : {adj:0};
-    proj[pid]=Number(adj.adj||0); teamOf[pid]=String(p.team||'').toUpperCase(); pos[pid]=String(p.pos||'').toUpperCase(); names[pid]=p.name||'';
+    proj[pid]=Number(adj.adj||0); teamOf[pid]=String(p.team||'').toUpperCase(); pos[pid]=String(p.pos||'').toUpperCase(); names[pid]=p.name||''; who[pid]={name:p.name||'', pos:pos[pid], team:teamOf[pid]};
     const tm=teamOf[pid]; const g=tm ? board[tm] : null;
     if(g && g.eid && !games[tm]){
       games[tm]={eid:String(g.eid), kick:g.date?Date.parse(g.date)||0:0, state:g.state, loaded:false};
@@ -305,7 +306,7 @@ function laSwingInputs(wk, a, b, o){
     seen[g.eid]=g;
   });
   const scoring=(typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.scoringRaw) || null;
-  return {mine, opp, proj, teamOf, pos, games, plays, scoring, actualFinal, names, pending};
+  return {mine, opp, proj, teamOf, pos, games, plays, scoring, actualFinal, names, who, pending};
 }
 // The block inside the hero card. Memoised on the matchup read and the summaries' stamps,
 // so the 45-second poll only rebuilds when a play has landed.
@@ -335,14 +336,15 @@ function laSwingSectionHTML(wk, a, b, o){
     : `<b>${Math.min(99,Math.max(1,pct))}%</b> to win`;
   const sub = inp.pending ? `${inp.pending} game${inp.pending>1?'s':''} still loading` : (built.decided ? 'final' : (wk===laCurrentWeek()?'live':''));
   const myName=(o&&o.names&&o.names.mine)||'';
-  _laSwing.last=built; _laSwing.names=inp.names;
+  _laSwing.last=built; _laSwing.names=inp.names; _laSwing.meta=inp.who||{};
   const n=built.series.length;
+  const dots=(n>1) ? built.keys.map((k,j)=>`<span class="la-swing-sdot ${k.side==='mine'?'la-swing-mine':'la-swing-opp'}" style="left:${(k.i/(n-1)*100).toFixed(2)}%" title="${escAttr(`${(inp.names||{})[k.pid]||''} · ${laSwingPhrase(k)}`)}" onclick="laSwingScrub(${k.i});laSwingCalloutKey(${j})"></span>`).join('') : '';
   return `<div class="la-swing">${head(sub)}
     <div class="la-swing-body">
       <div class="la-swing-chart">
         <div class="la-swing-state"><span class="la-swing-rest">${myName?`<span class="la-swing-who">${escHtml(myName)}</span> `:''}${state}</span><span class="la-swing-live"></span></div>
-        ${laSwingSVG(built, {w:laSwingDrawWidth(), label:`${myName||'My'} chance to win across the week`})}
-        ${n>1?`<div class="la-swing-ctl"><button class="btn btn-ghost btn-sm la-swing-play" onclick="laSwingReplay(event)" title="Replay the week from the first kickoff">▶ Replay</button><input type="range" class="la-swing-scrub" min="0" max="${n-1}" value="${n-1}" aria-label="Scrub through the week" oninput="laSwingScrub(this.value)"></div>`:''}
+        <div class="la-swing-stage">${laSwingSVG(built, {w:laSwingDrawWidth(), label:`${myName||'My'} chance to win across the week`})}<div class="la-swing-callout" hidden></div></div>
+        ${n>1?`<div class="la-swing-ctl"><button class="btn btn-ghost btn-sm la-swing-play" onclick="laSwingReplay(event)" title="Replay the week from the first kickoff">▶ Replay</button><div class="la-swing-scrubwrap"><input type="range" class="la-swing-scrub" min="0" max="${n-1}" value="${n-1}" aria-label="Scrub through the week" oninput="laSwingScrub(this.value)"><div class="la-swing-dots">${dots}</div></div></div>`:''}
       </div>
       ${laSwingRecapHTML(built, inp.names)}
     </div>
@@ -354,7 +356,67 @@ function laSwingSectionHTML(wk, a, b, o){
 // along the x-axis, not the play count, so Thursday night takes its slice and Sunday its
 // own), the swings appear as the line passes them, a cursor rides the line and the readout
 // says where things stood. The scrubber stops it and steps to any play.
-var _laSwingPlay = { raf:null, t0:0, dur:10000 };
+var _laSwingPlay = { raf:null, t0:0, dur:10000, hold:1300, holdUntil:0, lastNow:0, restore:null, shown:null };
+// The highlight's words: the play without the name, the way a broadcast card says it.
+function laSwingPhrase(k){
+  const y=Number(k.yds||0), yd=y?`${y} yard `:'';
+  switch(k.kind){
+    case 'recTd': return `${yd}TD catch!`;
+    case 'rushTd': return `${yd}TD run!`;
+    case 'rec': return `${yd}catch`;
+    case 'rush': return `${yd}run`;
+    case 'fg': return `${yd}field goal`;
+    case 'fgMiss': return `${yd}field goal, no good`;
+    case 'int': return 'Intercepted';
+    case 'fum': return 'Fumble';
+    case 'xp': return 'Extra point';
+    default: return k.title||'';
+  }
+}
+// The hero's numbers ride the sweep: the two scores, the projections under them, the win
+// bar between them. What was there is put back when the sweep ends or the scrubber returns
+// to now.
+function laSwingHeroSet(svg, s, atEnd){
+  const hero=(svg && svg.closest) ? svg.closest('.la-mu-hero') : null; if(!hero) return;
+  const q=(sel)=>hero.querySelector(sel);
+  const hp=q('.la-mu-home .la-mu-pts'), ap=q('.la-mu-away .la-mu-pts'), hs=q('.la-mu-home .la-mu-projsm'), as=q('.la-mu-away .la-mu-projsm');
+  const fill=q('.la-mc-wp-fill'), pl=q('.la-mc-wp-pct:not(.la-mc-wp-pct-r)'), pr=q('.la-mc-wp-pct-r');
+  const R=_laSwingPlay.restore;
+  if(atEnd){
+    if(R){ if(hp) hp.textContent=R.hp; if(ap) ap.textContent=R.ap; if(hs) hs.textContent=R.hs; if(as) as.textContent=R.as; if(fill) fill.style.width=R.fill; if(pl) pl.textContent=R.pl; if(pr) pr.textContent=R.pr; _laSwingPlay.restore=null; }
+    return;
+  }
+  if(!R) _laSwingPlay.restore={hp:hp?hp.textContent:'', ap:ap?ap.textContent:'', hs:hs?hs.textContent:'', as:as?as.textContent:'', fill:fill?fill.style.width:'', pl:pl?pl.textContent:'', pr:pr?pr.textContent:''};
+  if(hp) hp.textContent=s.pts.mine.toFixed(2);
+  if(ap) ap.textContent=s.pts.opp.toFixed(2);
+  if(hs) hs.textContent=`proj ${s.mine.toFixed(1)}`;
+  if(as) as.textContent=`proj ${s.opp.toFixed(1)}`;
+  const a=Math.min(99, Math.max(1, Math.round(s.p*100)));
+  if(fill) fill.style.width=a+'%';
+  if(pl) pl.textContent=a+'%';
+  if(pr) pr.textContent=(100-a)+'%';
+}
+// The highlight: the man and the play, pinned to the swing on the line, in his club's colour.
+function laSwingCallout(k){
+  const stage=document.querySelector('.la-swing-stage'); const el=stage && stage.querySelector('.la-swing-callout'); if(!el || !k) return;
+  const svg=stage.querySelector('.la-swing-svg'); const b=_laSwing.last; if(!svg || !b) return;
+  const G=laSwingGeom(svg.getAttribute('data-w'));
+  const cx=G.L+laSwingX(b.windows, k.t)*G.pw, cy=G.T+(1-k.p)*G.ph;
+  const m=(_laSwing.meta||{})[k.pid]||{};
+  const nm=m.name ? ((typeof gcShort==='function') ? gcShort(m.name) : m.name) : '';
+  const col=(typeof pwTeamColor==='function' && m.team) ? pwTeamColor(m.team) : '#3b4a6b';
+  const hs=(typeof SLEEPER_HEADSHOT==='function' && k.pid) ? SLEEPER_HEADSHOT(k.pid) : '';
+  el.innerHTML=`<img class="la-swing-co-hs" src="${escAttr(hs)}" alt="" onerror="this.style.visibility='hidden'"><div class="la-swing-co-txt"><b>${escHtml(nm)}${m.pos?` <span class="la-swing-co-pos">${escHtml(m.pos)}</span>`:''}</b><span>${escHtml(laSwingPhrase(k))}</span></div>`;
+  el.style.background=col;
+  el.style.left=Math.min(88, Math.max(12, cx/G.W*100)).toFixed(2)+'%';
+  el.style.top=(cy/G.H*100).toFixed(2)+'%';
+  el.classList.toggle('la-swing-co-below', !(k.dp>0));
+  el.onclick=(ev)=>{ try{ ev.stopPropagation(); }catch(e){} if(k.pid && typeof openPlayerCard==='function') openPlayerCard(k.pid, m.pos||'', m.team||''); };
+  el.hidden=false;
+}
+function laSwingCalloutHide(){ const el=document.querySelector('.la-swing-callout'); if(el) el.hidden=true; }
+function laSwingCalloutKey(j){ const b=_laSwing.last; if(b && b.keys[j]) laSwingCallout(b.keys[j]); }
+function laSwingMarkTap(ev, j){ try{ ev.stopPropagation(); }catch(e){} laSwingCalloutKey(j); }
 function laSwingShow(i, atEnd){
   const b=_laSwing.last; if(!b || !b.series.length) return;
   const svg=document.querySelector('.la-swing-svg'); if(!svg) return;
@@ -370,29 +432,38 @@ function laSwingShow(i, atEnd){
   const live=document.querySelector('.la-swing-live'), rest=document.querySelector('.la-swing-rest');
   if(live && rest){
     if(atEnd){ live.textContent=''; rest.style.display=''; }
-    else { rest.style.display='none'; const pct=Math.min(99, Math.max(1, Math.round(s.p*100))); live.innerHTML=`${escHtml(laSwingTickLabel(s.t))} · <b>${pct}%</b> to win · ${s.pts.mine.toFixed(1)} <span class="la-ins-sub">(proj ${s.mine.toFixed(1)})</span> vs ${s.pts.opp.toFixed(1)} <span class="la-ins-sub">(proj ${s.opp.toFixed(1)})</span>`; }
+    else { rest.style.display='none'; const pct=Math.min(99, Math.max(1, Math.round(s.p*100))); live.innerHTML=`${escHtml(laSwingTickLabel(s.t))} · <b>${pct}%</b> to win`; }
   }
+  laSwingHeroSet(svg, s, atEnd);
   const scrub=document.querySelector('.la-swing-scrub'); if(scrub) scrub.value=i;
 }
 function laSwingStop(){
   if(_laSwingPlay.raf && typeof window!=='undefined' && window.cancelAnimationFrame) window.cancelAnimationFrame(_laSwingPlay.raf);
-  _laSwingPlay.raf=null;
+  _laSwingPlay.raf=null; _laSwingPlay.holdUntil=0; _laSwingPlay.shown=null;
   const btn=document.querySelector('.la-swing-play'); if(btn) btn.textContent='▶ Replay';
 }
+// A ten-second sweep from the first kickoff, evenly along the axis; the clock pauses on each
+// swing while its highlight shows, the way a broadcast lingers on the replay.
 function laSwingReplay(ev){
   try{ ev.stopPropagation(); }catch(e){}
   const b=_laSwing.last; if(!b || b.series.length<2) return;
-  if(_laSwingPlay.raf){ laSwingStop(); laSwingShow(b.series.length-1, true); return; }   // a second tap skips to now
+  if(_laSwingPlay.raf){ laSwingStop(); laSwingCalloutHide(); laSwingShow(b.series.length-1, true); return; }   // a second tap skips to now
   const btn=document.querySelector('.la-swing-play'); if(btn) btn.textContent='■ Skip to now';
   const reduce = typeof window!=='undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  _laSwingPlay.t0=performance.now(); const dur = reduce ? 1 : _laSwingPlay.dur;
+  const dur = reduce ? 1 : _laSwingPlay.dur, hold = reduce ? 0 : _laSwingPlay.hold;
+  _laSwingPlay.t0=performance.now(); _laSwingPlay.lastNow=_laSwingPlay.t0; _laSwingPlay.holdUntil=0; _laSwingPlay.shown=new Set();
+  laSwingCalloutHide();
   const frame=(now)=>{
     if(!document.querySelector('.la-swing-svg')){ laSwingStop(); return; }   // the card repainted under us
+    if(now<_laSwingPlay.holdUntil){ _laSwingPlay.t0+=now-_laSwingPlay.lastNow; _laSwingPlay.lastNow=now; _laSwingPlay.raf=requestAnimationFrame(frame); return; }
+    _laSwingPlay.lastNow=now;
     const f=Math.min(1, (now-_laSwingPlay.t0)/dur);
     let lo=0, hi=b.series.length-1;
     while(lo<hi){ const mid=(lo+hi)>>1; if(laSwingX(b.windows, b.series[mid].t)<f) lo=mid+1; else hi=mid; }
     laSwingShow(lo, f>=1);
-    if(f<1) _laSwingPlay.raf=requestAnimationFrame(frame); else laSwingStop();
+    const k=b.keys.find(k=>!_laSwingPlay.shown.has(k) && laSwingX(b.windows, k.t)<=f);
+    if(k){ _laSwingPlay.shown.add(k); laSwingCallout(k); _laSwingPlay.holdUntil=now+hold; }
+    if(f<1) _laSwingPlay.raf=requestAnimationFrame(frame); else { laSwingStop(); setTimeout(laSwingCalloutHide, 1800); }
   };
   _laSwingPlay.raf=requestAnimationFrame(frame);
 }
@@ -400,5 +471,7 @@ function laSwingScrub(v){
   laSwingStop();
   const b=_laSwing.last; if(!b) return;
   const i=Number(v)||0; laSwingShow(i, i>=b.series.length-1);
+  const k=b.keys.find(k=>k.i===i);
+  if(k) laSwingCallout(k); else laSwingCalloutHide();
 }
 function laSwingToggle(){ laState.swingHide=!laState.swingHide; if(typeof _laInsRerender==='function') _laInsRerender(); }
