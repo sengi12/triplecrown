@@ -1451,9 +1451,18 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .wr-chip-clear{color:var(--accent);}
 @media (max-width:760px){ .wr-chips{display:flex;} }
 
-/* the result on every played game: a solid badge on the logo's corner — white W on green, L on red */
+/* the result on every played game: a bare letter on the logo's corner — green W, red L */
 .wr-opp-ico{position:relative;display:inline-flex;align-items:center;}
-.wr-opp-ico .wr-res-badge{position:absolute;top:-7px;right:-9px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;
-  font-size:10px;font-weight:900;line-height:1;color:#fff;background:var(--pick);margin:0;box-shadow:0 0 0 1.5px var(--surface2);}
+.wr-opp-ico .wr-res-badge{position:absolute;top:-9px;right:-9px;font-size:12px;font-weight:900;line-height:1;color:var(--pick);margin:0;
+  text-shadow:0 0 2px var(--surface2),0 0 2px var(--surface2),0 1px 2px var(--surface2);}
 .wr-opp-cell.wr-picked{box-shadow:0 0 0 2px var(--pick);}
-.wr-chip .wr-res{color:#fff;background:var(--pick);border-radius:7px;padding:1px 4px;font-size:9.5px;}
+.wr-chip .wr-res{color:var(--pick);font-size:11px;padding:0;margin-left:6px;}
+/* the phone's card is the slider and its rail until a tap opens the chips; the games ▾ / hide ▴
+   toggle sits in the card's corner, out of the label row, so it never wraps onto a row of its own */
+.wr-more{display:none;}
+@media (max-width:760px){
+  .week-range-card{padding:9px 12px 10px;cursor:pointer;position:relative;}
+  .week-range-card .week-range-label{padding-right:58px;}
+  .week-range-card .wr-more{display:block;position:absolute;top:9px;right:12px;font-size:10.5px;font-weight:700;color:var(--accent);white-space:nowrap;}
+  .week-range-card .week-range-help,.week-range-card:not(.wr-open) .wr-chips{display:none;}
+}
