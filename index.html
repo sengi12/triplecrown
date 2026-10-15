@@ -4406,7 +4406,7 @@ button.la-cliff:hover{filter:brightness(1.25);}
 /* picked games on the week rail: a tap, a W or an L, the rest dimmed */
 .wr-opp-cell.wr-pickable{pointer-events:auto;cursor:pointer;border-radius:8px;padding:1px 3px;}
 .wr-opp-cell.wr-pickable:hover{background:rgba(255,255,255,.06);}
-.wr-opp-cell.wr-dim{opacity:.35;}
+.wr-opp-cell.wr-dim{opacity:.45;}
 .wr-opp-cell.wr-picked{--pick:var(--muted2);box-shadow:0 0 0 2px var(--pick);background:color-mix(in srgb,var(--pick) 18%,transparent);opacity:1;}
 .wr-res-W{--pick:var(--success)!important;} .wr-res-L{--pick:var(--danger)!important;} .wr-res-T{--pick:var(--muted2)!important;}
 .wr-res{font-size:9px;font-weight:900;color:var(--pick);margin-left:2px;}
@@ -4421,7 +4421,7 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .wr-chip-clear{color:var(--accent);}
 @media (max-width:760px){ .wr-chips{display:flex;} }
 
-/* the result on a picked game: a solid badge on the logo's corner — white W on green, L on red */
+/* the result on every played game: a solid badge on the logo's corner — white W on green, L on red */
 .wr-opp-ico{position:relative;display:inline-flex;align-items:center;}
 .wr-opp-ico .wr-res-badge{position:absolute;top:-7px;right:-9px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;
   font-size:10px;font-weight:900;line-height:1;color:#fff;background:var(--pick);margin:0;box-shadow:0 0 0 1.5px var(--surface2);}
@@ -6897,11 +6897,13 @@ function renderWeekOpponentRail(team, season, className=''){
     const score = m.res ? ` · ${m.res} ${m.pf}-${m.pa}` : '';
     const canPick = pickable && wk<=played;
     const on = picks && picks.has(wk);
-    const pickCls = canPick ? ' wr-pickable' + (on ? ` wr-picked wr-res-${m.res||'T'}` : (picks && picks.size ? ' wr-dim' : '')) : '';
+    // Every played game wears its result — green W, red L — picked or not; a pick adds the
+    // ring and dims the rest, so the record reads at a glance and the pick still stands out.
+    const pickCls = canPick ? ' wr-pickable' + (on ? ' wr-picked' : (picks && picks.size ? ' wr-dim' : '')) + (m.res ? ` wr-res-${m.res}` : '') : '';
     const tap = canPick ? ` role="button" tabindex="0" onclick="weekPickToggle('${tm}',${wk},event)" onkeydown="if(event.key==='Enter'||event.key===' '){weekPickToggle('${tm}',${wk},event);}"` : '';
     cells.push(`<div class="wr-opp-cell${laneCls}${pickCls}" style="left:${pos}" title="Week ${wk}: ${ha} ${opp}${score}${canPick?(on?' · tap to drop':' · tap to filter to this game'):''}"${tap}>
       <span class="wr-opp-stem"></span>
-      <span class="wr-opp-ico">${logo?`<img src="${logo}" class="wr-opp-logo" alt="${opp}" onerror="this.style.display='none'">`:`<span class="wr-opp-fallback">${opp}</span>`}${(on && m.res)?`<span class="wr-res wr-res-badge" aria-label="${m.res==='W'?'Win':m.res==='L'?'Loss':'Tie'}">${m.res}</span>`:''}</span>
+      <span class="wr-opp-ico">${logo?`<img src="${logo}" class="wr-opp-logo" alt="${opp}" onerror="this.style.display='none'">`:`<span class="wr-opp-fallback">${opp}</span>`}${(canPick && m.res)?`<span class="wr-res wr-res-badge" aria-label="${m.res==='W'?'Win':m.res==='L'?'Loss':'Tie'}">${m.res}</span>`:''}</span>
     </div>`);
   }
   return `<div class="wr-opp-rail ${className}">${cells.join('')}</div>`;
@@ -6954,7 +6956,7 @@ function weekPickChipsHTML(team, season){
   for(let wk=1; wk<=played; wk++){
     const m=byWeek[wk]; if(!m || !m.opp) continue;
     const on=picks.has(wk);
-    chips.push(`<button type="button" class="wr-chip${on?` wr-picked wr-res-${m.res||'T'}`:''}" onclick="weekPickToggle('${tm}',${wk},event)" title="Week ${wk}: ${m.home?'vs':'@'} ${m.opp}${m.res?` · ${m.res} ${m.pf}-${m.pa}`:''}"><b>${wk}</b> ${m.home?'vs':'@'} ${escHtml(String(m.opp))}${m.res?`<span class="wr-res">${m.res}</span>`:''}</button>`);
+    chips.push(`<button type="button" class="wr-chip${on?' wr-picked':''}${m.res?` wr-res-${m.res}`:''}" onclick="weekPickToggle('${tm}',${wk},event)" title="Week ${wk}: ${m.home?'vs':'@'} ${m.opp}${m.res?` · ${m.res} ${m.pf}-${m.pa}`:''}"><b>${wk}</b> ${m.home?'vs':'@'} ${escHtml(String(m.opp))}${m.res?`<span class="wr-res">${m.res}</span>`:''}</button>`);
   }
   if(!chips.length) return '';
   return `<div class="wr-chips">${chips.join('')}${picks.size?`<button type="button" class="wr-chip wr-chip-clear" onclick="weekPickClear('${tm}')">clear</button>`:''}</div>`;

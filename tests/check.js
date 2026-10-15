@@ -510,11 +510,13 @@ function renderWeekOpponentRail(team, season, className=''){
     const score = m.res ? ` · ${m.res} ${m.pf}-${m.pa}` : '';
     const canPick = pickable && wk<=played;
     const on = picks && picks.has(wk);
-    const pickCls = canPick ? ' wr-pickable' + (on ? ` wr-picked wr-res-${m.res||'T'}` : (picks && picks.size ? ' wr-dim' : '')) : '';
+    // Every played game wears its result — green W, red L — picked or not; a pick adds the
+    // ring and dims the rest, so the record reads at a glance and the pick still stands out.
+    const pickCls = canPick ? ' wr-pickable' + (on ? ' wr-picked' : (picks && picks.size ? ' wr-dim' : '')) + (m.res ? ` wr-res-${m.res}` : '') : '';
     const tap = canPick ? ` role="button" tabindex="0" onclick="weekPickToggle('${tm}',${wk},event)" onkeydown="if(event.key==='Enter'||event.key===' '){weekPickToggle('${tm}',${wk},event);}"` : '';
     cells.push(`<div class="wr-opp-cell${laneCls}${pickCls}" style="left:${pos}" title="Week ${wk}: ${ha} ${opp}${score}${canPick?(on?' · tap to drop':' · tap to filter to this game'):''}"${tap}>
       <span class="wr-opp-stem"></span>
-      <span class="wr-opp-ico">${logo?`<img src="${logo}" class="wr-opp-logo" alt="${opp}" onerror="this.style.display='none'">`:`<span class="wr-opp-fallback">${opp}</span>`}${(on && m.res)?`<span class="wr-res wr-res-badge" aria-label="${m.res==='W'?'Win':m.res==='L'?'Loss':'Tie'}">${m.res}</span>`:''}</span>
+      <span class="wr-opp-ico">${logo?`<img src="${logo}" class="wr-opp-logo" alt="${opp}" onerror="this.style.display='none'">`:`<span class="wr-opp-fallback">${opp}</span>`}${(canPick && m.res)?`<span class="wr-res wr-res-badge" aria-label="${m.res==='W'?'Win':m.res==='L'?'Loss':'Tie'}">${m.res}</span>`:''}</span>
     </div>`);
   }
   return `<div class="wr-opp-rail ${className}">${cells.join('')}</div>`;
@@ -567,7 +569,7 @@ function weekPickChipsHTML(team, season){
   for(let wk=1; wk<=played; wk++){
     const m=byWeek[wk]; if(!m || !m.opp) continue;
     const on=picks.has(wk);
-    chips.push(`<button type="button" class="wr-chip${on?` wr-picked wr-res-${m.res||'T'}`:''}" onclick="weekPickToggle('${tm}',${wk},event)" title="Week ${wk}: ${m.home?'vs':'@'} ${m.opp}${m.res?` · ${m.res} ${m.pf}-${m.pa}`:''}"><b>${wk}</b> ${m.home?'vs':'@'} ${escHtml(String(m.opp))}${m.res?`<span class="wr-res">${m.res}</span>`:''}</button>`);
+    chips.push(`<button type="button" class="wr-chip${on?' wr-picked':''}${m.res?` wr-res-${m.res}`:''}" onclick="weekPickToggle('${tm}',${wk},event)" title="Week ${wk}: ${m.home?'vs':'@'} ${m.opp}${m.res?` · ${m.res} ${m.pf}-${m.pa}`:''}"><b>${wk}</b> ${m.home?'vs':'@'} ${escHtml(String(m.opp))}${m.res?`<span class="wr-res">${m.res}</span>`:''}</button>`);
   }
   if(!chips.length) return '';
   return `<div class="wr-chips">${chips.join('')}${picks.size?`<button type="button" class="wr-chip wr-chip-clear" onclick="weekPickClear('${tm}')">clear</button>`:''}</div>`;
