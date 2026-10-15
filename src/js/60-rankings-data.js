@@ -349,7 +349,54 @@ function contractSummaryHTML(name){
   if(sub.length) parts.push(`<span class="muted pcard-ct-len">${two(sub.join(' · '), subS.join(' · '))}</span>`);
   if(c.gtd!=null) parts.push(`<span class="muted">${fmtAPY(c.gtd)} gtd</span>`);
   if(c.fa!=null) parts.push(`<span class="pcard-ct-fa">FA <b>${two(String(c.fa), "’"+String(c.fa).slice(-2))}</b></span>`);
-  return `<div class="pcard-contract"><span class="pcard-contract-lbl">CONTRACT</span>${parts.join('')}</div>`;
+  // With the year-by-year table baked (the player's OverTheCap page), the band is a tap that
+  // opens it: each year's pay and cap hit, the dead money, and the potential out.
+  const yrsTbl = (Array.isArray(c.years) && c.years.length) ? c.years : null;
+  if(!yrsTbl) return `<div class="pcard-contract"><span class="pcard-contract-lbl">CONTRACT</span>${parts.join('')}</div>`;
+  const open = !!(typeof pcardState!=='undefined' && pcardState && pcardState.contractOpen);
+  return `<div class="pcard-contract pcard-contract-tap${open?' open':''}" role="button" tabindex="0" aria-expanded="${open}" aria-controls="pcardContractDetail" onclick="pcardContractToggle(event)" onkeydown="if(event.key==='Enter'||event.key===' '){pcardContractToggle(event);}" title="Year by year">
+      <span class="pcard-contract-lbl">CONTRACT</span>${parts.join('')}<span class="pcard-ct-chev" aria-hidden="true">▾</span></div>
+    <div class="pcard-ct-detail" id="pcardContractDetail"${open?'':' hidden'}>${contractDetailHTML(c)}</div>`;
+}
+// The columns the builder bakes a contract year in (build_seed.py CONTRACT_YEAR_COLS).
+const CONTRACT_YEAR_COLS = ['yr','age','base','pro','opt','roster','gtd','cap','pct','dead','save','void','note'];
+function contractYearRows(c){
+  return (c.years||[]).map(a=>{ const o={}; CONTRACT_YEAR_COLS.forEach((k,i)=>{ o[k]=a[i]; }); return o; });
+}
+// The year table: Year · Base · Bonuses (prorated signing + option + roster) · Cap hit · Dead
+// cap · Savings. The season in progress is lit; the void years read as such; the potential
+// out — the first year from now on where a cut saves cap — sits as a divider before that
+// year, with the dead cap it would carry, the way the contract sites mark it.
+function contractDetailHTML(c){
+  const rows=contractYearRows(c); if(!rows.length) return '';
+  const now=(typeof TC_SEASON!=='undefined' && TC_SEASON) ? Number(TC_SEASON.year||0) : 0;
+  const m=(v)=> (v==null) ? '<span class="muted">–</span>' : fmtAPY(Math.abs(v));
+  const signed=(v)=> (v==null) ? '<span class="muted">–</span>' : (v<0 ? `<span class="ct-neg">(${fmtAPY(-v)})</span>` : fmtAPY(v));
+  const outRow=c.out ? rows.find(r=>r.yr===c.out) : null;
+  const body=rows.map(r=>{
+    const bonuses=(r.pro||0)+(r.opt||0)+(r.roster||0);
+    const cls=[r.yr===now?'ct-now':'', r.void?'ct-void':'', (c.out && r.yr>=c.out)?'ct-after-out':''].filter(Boolean).join(' ');
+    const outDiv = (c.out && r.yr===c.out)
+      ? `<tr class="ct-out"><td colspan="6"><span class="ct-out-lbl">POTENTIAL OUT</span> <b>${c.out}</b>${outRow&&outRow.dead!=null?` · ${fmtAPY(outRow.dead)} dead cap`:''}${outRow&&outRow.save!=null?` · saves ${fmtAPY(outRow.save)}`:''}</td></tr>` : '';
+    return `${outDiv}<tr${cls?` class="${cls}"`:''}>
+      <td class="ct-yr"><b>${r.yr}</b>${r.age!=null?`<span class="ct-age">${r.age}</span>`:''}${r.note?`<span class="ct-note">${escHtml(r.note)}</span>`:''}</td>
+      <td class="n">${r.void?'<span class="ct-voidlbl">VOID</span>':m(r.base)}</td>
+      <td class="n ct-l">${bonuses?fmtAPY(bonuses):'<span class="muted">–</span>'}</td>
+      <td class="n"><b>${m(r.cap)}</b>${r.pct!=null?`<span class="ct-pct">${r.pct}%</span>`:''}</td>
+      <td class="n">${m(r.dead)}</td>
+      <td class="n ct-l">${signed(r.save)}</td>
+    </tr>`;
+  }).join('');
+  return `<table class="ct-tbl"><thead><tr><th>Year</th><th class="n">Base</th><th class="n ct-l">Bonuses</th><th class="n">Cap hit</th><th class="n">Dead cap</th><th class="n ct-l">Cut saves</th></tr></thead><tbody>${body}</tbody></table>
+    <div class="pcard-src">OverTheCap · base salary, prorated signing and option bonuses, roster bonus, cap number; dead cap and savings on a pre-June-1 cut. Potential out: the first year from now on where a cut saves cap.${c.out?'':' None on this deal.'}</div>`;
+}
+function pcardContractToggle(ev){
+  try{ ev.stopPropagation(); }catch(e){}
+  const d=document.getElementById('pcardContractDetail'); if(!d) return;
+  const open=d.hidden;
+  d.hidden=!open;
+  const band=d.previousElementSibling; if(band && band.classList){ band.classList.toggle('open', open); band.setAttribute('aria-expanded', String(open)); }
+  if(typeof pcardState!=='undefined' && pcardState) pcardState.contractOpen=open;
 }
 
 // ── KeepTradeCut dynasty link (player card) ──────────────────────────────────
