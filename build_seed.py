@@ -675,14 +675,142 @@ OTC_URLS = {
 def _strip_tags(s):
     return _re.sub(r"<[^>]+>", "", s).replace("&nbsp;", " ").strip()
 
-def _parse_otc_table(html):
-    """Yield lists of cell-texts for each <tr> that has <td> cells."""
+def _parse_otc_table(html, with_links=False):
+    """Yield lists of cell-texts for each <tr> that has <td> cells. with_links=True yields
+    (cells, href) pairs, the href being the row's first player link ('/player/joe-burrow/8741/')."""
     rows = []
     for tr in _re.findall(r"<tr[^>]*>(.*?)</tr>", html, _re.DOTALL | _re.IGNORECASE):
         cells = _re.findall(r"<td[^>]*>(.*?)</td>", tr, _re.DOTALL | _re.IGNORECASE)
         if cells:
-            rows.append([_strip_tags(c) for c in cells])
+            texts = [_strip_tags(c) for c in cells]
+            if with_links:
+                m = _re.search(r'href="(/player/[^"]+)"', tr)
+                rows.append((texts, m.group(1) if m else None))
+            else:
+                rows.append(texts)
     return rows
+
+# ── The contract, year by year (the player's own OverTheCap page) ──────────────
+# A card's contract band expands to this: each year's base, bonuses, cap number, dead money
+# and cap savings on a cut, the void years, the option notes, and the "potential out" — the
+# first year from now on where cutting the player saves cap, which is the year the club can
+# walk away (Spotrac's POTENTIAL OUT marker reads the same way). One page per player, only
+# the fantasy positions, cached per player and re-read only when his summary line moved.
+CONTRACT_YEAR_COLS = ["yr", "age", "base", "pro", "opt", "roster", "gtd", "cap", "pct", "dead", "save", "void", "note"]
+OTC_YEARS_POS = {"QB", "RB", "WR", "TE", "K"}
+
+def _otc_money_signed(raw):
+    """'$27,049,784' → 27049784, '($72,449,784)' → -72449784, 'Void'/'' → None."""
+    s = (raw or "").strip()
+    m = _re.search(r"\(?\$([\d,]+)\)?", s)
+    if not m:
+        return None
+    v = int(m.group(1).replace(",", ""))
+    return -v if s.startswith("(") else v
+
+def _otc_first_money(raw):
+    """The first dollar figure in a cell that concatenates several ('$110,049,568$55,899,784…')."""
+    m = _re.search(r"\(?\$[\d,]+\)?", raw or "")
+    return _otc_money_signed(m.group(0)) if m else None
+
+def parse_otc_contract_years(html, season):
+    """The current contract's per-year table off a player page → {years:[[CONTRACT_YEAR_COLS…]], out}.
+    Columns are found by header name, so a reshuffle on OTC's side does not mis-read a column."""
+    tables = _re.findall(r"<table[^>]*>(.*?)</table>", html, _re.DOTALL | _re.IGNORECASE)
+    for t in tables:
+        if "Dead Money" not in t:
+            continue
+        # the FIRST header row, each header repeated by its colspan, so the slots line up with
+        # the body's cells ("Prorated Bonus" spans the signing and option prorations, the
+        # dead-money header spans dead money and cap savings)
+        head_rows = _re.findall(r"<tr[^>]*>(.*?)</tr>", t, _re.DOTALL | _re.IGNORECASE)
+        head_tr = next((r for r in head_rows if "<th" in r.lower()), "")
+        heads = []
+        for attrs, body in _re.findall(r"<th([^>]*)>(.*?)</th>", head_tr, _re.DOTALL | _re.IGNORECASE):
+            span_m = _re.search(r'colspan="(\d+)"', attrs)
+            span = int(span_m.group(1)) if span_m else 1
+            label = _strip_tags(body).split("\n")[0].strip()
+            heads.extend([label] * span)
+        ix = {}
+        for i, h in enumerate(heads):
+            if h and h not in ix:
+                ix[h] = i
+        need = ["Year", "Base Salary", "CapNumber"]
+        if any(k not in ix for k in need):
+            continue
+        years = []
+        for tr in _re.findall(r"<tr[^>]*>(.*?)</tr>", t, _re.DOTALL | _re.IGNORECASE):
+            tds = _re.findall(r"<td([^>]*)>(.*?)</td>", tr, _re.DOTALL | _re.IGNORECASE)
+            if not tds:
+                continue
+            cells = [_strip_tags(v) for _, v in tds]
+            classes = [a for a, _ in tds]
+            ym = _re.match(r"\s*(20\d{2})", cells[0])
+            if not ym or len(cells) <= ix["CapNumber"]:
+                continue
+            yr = int(ym.group(1))
+            note = _re.sub(r"\s+", " ", cells[0][ym.end():]).replace("📝", "").strip(" :")
+            cell = lambda k, off=0: cells[ix[k] + off] if (k in ix and ix[k] + off < len(cells)) else ""
+            by_class = lambda c: next((cells[i] for i, a in enumerate(classes) if c in a), "")
+            base_raw = cell("Base Salary")
+            void = base_raw.strip().lower() == "void"
+            age_m = _re.search(r"\d+", cell("Age"))
+            pct_m = _re.search(r"[\d.]+", cell("Cap %"))
+            dead = _otc_first_money(by_class("player-dead-money"))
+            save = _otc_first_money(by_class("player-cap-savings"))
+            years.append([
+                yr,
+                int(age_m.group()) if age_m else None,
+                None if void else _otc_money_signed(base_raw),
+                _otc_money_signed(cell("Prorated Bonus")),
+                _otc_money_signed(cell("Prorated Bonus", 1)) if heads.count("Prorated Bonus") > 1 else None,
+                _otc_money_signed(cell("Roster Bonus")),
+                None if void else _otc_money_signed(cell("Guaranteed Salary")),
+                _otc_money_signed(cell("CapNumber")),
+                float(pct_m.group()) if pct_m else None,
+                dead, save, 1 if void else 0, note,
+            ])
+        if not years:
+            continue
+        # the potential out: the first year from this season on where a cut saves cap
+        out = next((y[0] for y in years if y[0] >= int(season) and y[10] is not None and y[10] > 0 and not y[11]), None)
+        return {"years": years, "out": out}
+    return None
+
+def fetch_otc_contract_years(url, season, summary, refresh):
+    """One player's per-year contract table, cached per player; the cache is reused while the
+    player's summary line (apy / total / free-agency year) is unchanged, re-read when it moved."""
+    if not url:
+        return None
+    slug = _re.sub(r"[^a-z0-9]+", "-", url.strip("/").split("/player/")[-1].lower()).strip("-")
+    cache_path = os.path.join(CACHE_DIR, "contracts", "players", f"{slug}.json")
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    sig = f"{summary.get('apy')}|{summary.get('total')}|{summary.get('fa')}|{season}"
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path) as f:
+                cached = json.load(f)
+            if cached.get("sig") == sig and (not refresh or cached.get("years")):
+                return {"years": cached.get("years"), "out": cached.get("out")}
+        except Exception:
+            pass
+    html = None
+    for attempt in range(2):
+        try:
+            req = request.Request("https://overthecap.com" + url, headers=UA)
+            with request.urlopen(req, timeout=60) as r:
+                html = r.read().decode("utf-8", "replace")
+            break
+        except Exception:
+            time.sleep(2 * (attempt + 1))
+    if html is None:
+        return None
+    parsed = parse_otc_contract_years(html, season)
+    if not parsed:
+        return None
+    with open(cache_path, "w") as f:
+        json.dump({"sig": sig, "years": parsed["years"], "out": parsed["out"]}, f)
+    return parsed
 
 def _otc_money(raw):
     """Parse an OverTheCap dollar cell ('$64,000,000') → int dollars, or None."""
@@ -726,9 +854,9 @@ def fetch_otc_contracts(pos, url, refresh):
                 return json.load(f)
         print(f" FAILED ({type(last).__name__}: {last}) — NO {pos} contracts this build")
         return {}
-    rows = _parse_otc_table(html)
+    rows = _parse_otc_table(html, with_links=True)
     out = {}
-    for cells in rows:
+    for cells, link in rows:
         # Expected layout: [player, team, age, total value, avg/year, tot gtd, full gtd, free agency]
         if len(cells) < 8:
             continue
@@ -751,6 +879,8 @@ def fetch_otc_contracts(pos, url, refresh):
         if m:
             fa = int(m.group(1))
         out[key] = {"age": age, "apy": apy, "fa": fa, "total": total, "gtd": gtd}
+        if link:
+            out[key]["url"] = link
     if not out and os.path.exists(cache_path):
         # A 200 with no parseable rows is a layout change or a bot page, not an empty position.
         print(" ok but EMPTY — keeping the cached table")
@@ -764,6 +894,11 @@ def fetch_otc_contracts(pos, url, refresh):
 # When two players share a normalized name, the one the app can actually show wins: every
 # contract consumer (Dynasty columns, player-card summary) is a skill-position surface.
 _OTC_POS_PRIORITY = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "FB": 5}
+
+def _tcMonthAwareYearPy():
+    import datetime as _dt
+    d = _dt.date.today()
+    return d.year - 1 if d.month < 3 else d.year
 
 def build_contracts(refresh):
     """Build {nameKey: {age, apy, fa, total, gtd, pos}} merged across all positions."""
@@ -780,6 +915,24 @@ def build_contracts(refresh):
                 continue   # keep the skill-position namesake
             contracts[key] = info
         time.sleep(1.0)    # be polite between position pages; the burst is what gets blocked
+    # the year-by-year table for every fantasy-position player with a page link
+    season = str(SEASON) if "SEASON" in globals() else str(_tcMonthAwareYearPy())
+    todo = [(k, v) for k, v in contracts.items() if v.get("pos") in OTC_YEARS_POS and v.get("url")]
+    got = 0
+    print(f"  → contract years for {len(todo)} players ...", end="", flush=True)
+    for n, (key, info) in enumerate(todo, 1):
+        detail = fetch_otc_contract_years(info["url"], season, info, refresh)
+        if detail and detail.get("years"):
+            info["years"] = detail["years"]
+            if detail.get("out"):
+                info["out"] = detail["out"]
+            got += 1
+        if n % 100 == 0:
+            print(f" {n}", end="", flush=True)
+        time.sleep(0.35)
+    print(f" ok ({got} with a year-by-year table)")
+    for v in contracts.values():
+        v.pop("url", None)   # the link was for the build; the app has no use for it
     if missing:
         print(f"\n  ⚠ WARNING: no contracts for {', '.join(missing)} — those positions' "
               f"Age/APY/FA will be blank until the next successful fetch")

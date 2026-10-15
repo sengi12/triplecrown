@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-15
 
+- feat(card): tap the contract band on a player card and it opens the deal year by year — base, bonuses, cap hit with its share, dead cap, cut savings — with the season in progress lit, void years marked and a POTENTIAL OUT divider before the first year a cut saves cap; the builder follows OverTheCap's player links for the table, cached per deal (#185)
 - fix(sidebar): the Leaders | Game Center toggle and the hide chevron sit in the top row of the Leaders pane too, so they stay put when switching panes; the week select shares that row when the panel is wide enough and otherwise drops to the scoring line (#186)
 - fix(team): a picked game's result is a solid badge on the logo's corner — white W on green, L on red — instead of a small coloured letter beside it (#184)
 - feat(team): tap a game on a team page's week rail to filter to it — the game wears its W or L from the schedule's scores, the rest dim, tap more to add them, click off the card to clear; phones get a row of chips under the slider at thumb size (#183)

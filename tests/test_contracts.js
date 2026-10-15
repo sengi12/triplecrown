@@ -9,7 +9,8 @@ const path=require('path');
 const code=fs.readFileSync(path.join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   assembleSeed, normalizeSleeperRow, ensureTeam, initPassingShares, buildPlayerList,
-  contractEntry, hasContracts, fmtAPY, ecrNormName, contractSummaryHTML,
+  contractEntry, hasContracts, fmtAPY, ecrNormName, contractSummaryHTML, TC_SEASON,
+  getContracts:()=>CONTRACTS,
   setSEED:(s)=>{SEED=s;projSeed=s;seasonStatsCache.proj=s;workingProj={};userProj=workingProj;activeSeason='proj';},
   setContracts:(c)=>{CONTRACTS=c;},
   setFormat:(f)=>{rankFormat=f;},
@@ -83,3 +84,19 @@ console.log('band renders APY/len/total/gtd/FA:', ok5main);
 console.log('missing & all-null → empty:', ok5none && ok5null);
 console.log('short forms for narrow phones (7y · $448M, FA ’34):', ok5short);
 console.log('RESULT:', ok5main && ok5none && ok5null && ok5derive && ok5short?'PASS (contract band)':'FAIL');
+console.log('\n=== TEST 6: the band opens the year table ===');
+let ok6=true; const chk=(c,l)=>{ ok6=ok6&&!!c; console.log((c?'  pass: ':'  FAIL: ')+l); };
+app.setContracts(Object.assign({}, app.getContracts(), {'joe burrow':{age:30, apy:55000000, fa:2030, total:275000000, gtd:219010000, pos:'QB', out:2028,
+  years:[[2025,29,25250000,7749784,13000000,0,25250000,45999784,16.0,null,null,0,'March 22: Option due'],
+         [2026,30,12250000,10349784,15000000,0,12250000,37599784,11.8,110049568,-72449784,0,'March 20: Option due'],
+         [2027,31,27250000,10349784,17000000,0,18300000,54599784,16.7,72449784,-17850000,0,''],
+         [2028,32,35500000,2600000,18000000,0,0,55849784,15.9,28800000,27049784,0,''],
+         [2030,34,null,2600000,5000000,0,null,11600000,null,4600000,7000000,1,'February 20: Contract voids']]}}));
+app.TC_SEASON.year=2026;
+const jb=app.contractSummaryHTML('Joe Burrow');
+chk(/pcard-contract pcard-contract-tap[^>]*role="button"[^>]*aria-expanded="false"[^>]*onclick="pcardContractToggle\(event\)"/.test(jb) && /<div class="pcard-ct-detail" id="pcardContractDetail" hidden>/.test(jb), 'with a year table baked the band is a tap, the table closed under it');
+chk(/<tr class="ct-now">[\s\S]*?<b>2026<\/b>[\s\S]*?\$12\.3M[\s\S]*?\$25\.3M[\s\S]*?<b>\$37\.6M<\/b><span class="ct-pct">11\.8%<\/span>[\s\S]*?\$110M[\s\S]*?<span class="ct-neg">\(\$72\.4M\)<\/span>/.test(jb), 'the season in progress is lit: base, bonuses (signing + option + roster), cap hit with its share, dead cap, and a cut that costs rather than saves in red');
+chk(/<tr class="ct-out"><td colspan="6"><span class="ct-out-lbl">POTENTIAL OUT<\/span> <b>2028<\/b> · \$28\.8M dead cap · saves \$27M<\/td><\/tr><tr class=" ct-after-out">/.test(jb.replace(/class="ct-after-out"/g,'class=" ct-after-out"')) || /POTENTIAL OUT<\/span> <b>2028<\/b> · \$28\.8M dead cap · saves \$27M/.test(jb), 'the potential out sits as a divider before 2028 with the dead cap and the savings');
+chk(/ct-void[\s\S]*?<span class="ct-voidlbl">VOID<\/span>/.test(jb) && /Contract voids/.test(jb) && /Option due/.test(jb), 'void years read VOID; the option and void notes ride under the year');
+chk(!/pcard-contract-tap/.test(app.contractSummaryHTML('Patrick Mahomes')), 'a contract without the table stays the plain band');
+console.log('RESULT:', ok6?'PASS (year table)':'FAIL');
