@@ -14,6 +14,7 @@ const app=new Function(code+`
   hasSeasonStarted=()=>true; TC_SEASON.year=2026; TC_SEASON.phase='regular'; TC_SEASON.week=2; activeSeason='2026';
   const board=(teams)=>{ _tcBoard={season:'2026',week:2,at:Date.now(),teams,busy:false,live:Object.values(teams).some(t=>t.state==='in')}; };
   return { board, played:tcSeasonPlayedWeek, max:tcSeasonMaxWeek, numRail:renderWeekNumberRail, setWeek:(w)=>{ TC_SEASON.week=w; _tcBoard.week=w; },
+    parse:_parseWeeklySchedule, rail:(team,cls)=>renderWeekOpponentRail(team,'2026',cls), setSched:(m)=>{ _weeklyOppBySeason['2026']=m; }, setProj:(t,st)=>{ userProj[t]=st; }, picks:weekPicks, chips:(t)=>weekPickChipsHTML(t,'2026'), sumR:sumWeeklyRange, sumQ:sumWeeklyRangeQB,
     oppRail:(team)=>{ _weeklyOppBySeason['2026']={[team]:{1:{opp:'GB',home:true},2:{opp:'CHI',home:false},3:{opp:'BAL',home:true}}}; return renderWeekOpponentRail(team,'2026'); },
     advCard:(team)=>{ _advWeeklySeedReady=true; _advSeasonCanRange=()=>true; _advEnsureWeeklyLoaded=()=>{}; advTeamSeason=()=>'2026'; return renderAdvWeekRange(team,{showOppRail:false}); },
     advDrag:(team,which,v)=>{ advWeekRangeDrag(team,which,v); return document.getElementById('adv-wr-hi-'+team).textContent+'|'+document.getElementById('adv-wr-lo-'+team).textContent; } };
@@ -41,5 +42,26 @@ chk(/max="18"/.test(card) && /of 2 played/.test(card) && /dual-slider-dead" styl
 chk(app.advDrag('DET','hi',9)==='2|1', 'dragging the high thumb into the unplayed weeks holds it at the last game played');
 const cardM=app.advCard('MIA');
 chk(/of 1 played/.test(cardM) && /dual-slider-dead" style="left:0\.00%"/.test(cardM), 'the Dolphins\' slider: 1 played, the dead zone from week 1 on');
+
+console.log('=== picked games: the schedule carries the scores, the rail carries the taps ===');
+const CSV='season,game_type,week,home_team,away_team,home_score,away_score\n2026,REG,1,CIN,TB,27,24\n2026,REG,2,HOU,CIN,20,31\n2026,REG,3,PIT,CIN,,\n2025,REG,1,CIN,KC,10,13\n2026,POST,19,CIN,BAL,3,0';
+const m=app.parse(CSV,'2026');
+chk(m && m.CIN[1].res==='W' && m.CIN[1].pf===27 && m.CIN[1].pa===24 && m.CIN[2].res==='W' && m.CIN[2].home===false && m.CIN[2].pf===31 && !m.CIN[3].res && !m.CIN[19] && m.TB[1].res==='L',
+    'each played game carries the score from the team\'s own chair (W 27-24 at home, W 31-20 on the road), an unplayed one no result, other seasons and the playoffs left out');
+app.setSched(m); app.setWeek(4);
+app.setProj('CIN', {weekPick:[2], rushing:{}, passing_shares:null});
+const r=app.rail('CIN','wr-opp-main');
+chk(/wr-pickable[^"]*wr-picked wr-res-W[^>]*onclick="weekPickToggle\('CIN',2,event\)"/.test(r) && /<span class="wr-res">W<\/span>/.test(r), 'the picked game wears its result — a green W — and a tap drops it');
+chk(/wr-pickable wr-dim[^>]*onclick="weekPickToggle\('CIN',1,event\)"/.test(r), 'the other played games dim while a pick is on, and stay a tap');
+chk(!/weekPickToggle\('CIN',3/.test(r) || /wr-pickable[^>]*weekPickToggle\('CIN',3/.test(r), 'week 3 (played, no score yet) is still pickable');
+chk(!/weekPickToggle/.test(app.rail('CIN','wr-opp-adv')), 'the Adv Metrics rail keeps its own week range: no taps there');
+app.setProj('CIN', {weekPick:null, rushing:{}});
+chk(!/wr-dim|wr-picked/.test(app.rail('CIN','wr-opp-main')) && /weekPickToggle\('CIN',1,event\)/.test(app.rail('CIN','wr-opp-main')), 'no pick: nothing dimmed, every played game a tap');
+const wk={1:{team:'CIN',stats:{rec:3,rec_yd:30,gp:1}}, 2:{team:'CIN',stats:{rec:5,rec_yd:50,gp:1}}, 3:{team:'CIN',stats:{rec:7,rec_yd:70,gp:1}}};
+chk(app.sumR(wk,'CIN',1,3).receptions===15 && app.sumR(wk,'CIN',1,3,new Set([1,3])).receptions===10 && app.sumR(wk,'CIN',1,3,new Set([1,3])).games_played===2, 'a set of weeks filters the span to the picked games (1 and 3 of 1–3)');
+chk(app.sumQ({1:{team:'CIN',stats:{pass_yd:200,gp:1}},2:{team:'CIN',stats:{pass_yd:300,gp:1}}},'CIN',1,2,new Set([2])).pass_yards===300, 'the quarterback sum takes the same set');
+app.setProj('CIN', {weekPick:[1], rushing:{}});
+const ch=app.chips('CIN');
+chk((ch.match(/class="wr-chip[ "]/g)||[]).length===4 && /wr-chip wr-picked wr-res-W[^>]*onclick="weekPickToggle\('CIN',1,event\)"/.test(ch) && /wr-chip-clear/.test(ch), 'the phone\'s chips: one per played game, the picked one lit with its result, and a clear chip while a pick is on');
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
