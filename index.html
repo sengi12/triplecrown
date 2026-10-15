@@ -2082,6 +2082,17 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .tc-brk tr.neg td{color:var(--danger);}
 .tc-brk tfoot td{font-weight:900;border-top:2px solid var(--border2);}
 .tc-brk-src,.tc-brk-none{font-size:11px;color:var(--muted);margin-top:6px;}
+
+/* the sidebar's controls: Leaders | Game Center as a pair, the hide chevron beside them */
+.rsb-seg{display:inline-flex;border:1px solid var(--border);border-radius:11px;overflow:hidden;background:var(--surface2);}
+.rsb-seg .rsb-btn{border:none;border-radius:0;background:transparent;width:26px;}
+.rsb-seg .rsb-btn+.rsb-btn{border-left:1px solid var(--border);}
+.rsb-seg .rsb-btn.active{background:var(--accent);color:var(--on-accent,#fff);}
+.rsb-seg .rsb-btn.active:hover{color:var(--on-accent,#fff);}
+.rsb-btn .tc-ico{width:14px;height:14px;vertical-align:-2px;}
+.rsb-hide,.rsb-show{width:24px;}
+.rsb-seg .rsb-btn.active .tc-ico,.rsb-seg .rsb-btn.active:hover .tc-ico{color:var(--on-accent,#fff);}
+.rsb-btn .tc-ico{color:currentColor;}
 /* ── Coaching Playbook Modal + Insights ───────────────────────────────────── */
 
 /* Click affordances for coaching-scheme entry points */
@@ -6521,6 +6532,9 @@ const TC_ICON = (() => {
     chat:   '<path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z"/><path d="M8.5 10.5h7M8.5 13.5h4"/>',
     scale:  '<path d="M12 4v15M8 19h8M6 7l12-2"/><path d="m6 7-2.3 5.2a2.6 2.6 0 0 0 4.6 0L6 7ZM18 5l-2.3 5.2a2.6 2.6 0 0 0 4.6 0L18 5Z"/>',
     menu:   '<path d="M4 7h16M4 12h16M4 17h16"/>',
+    // Chevrons — a panel tucking away to the right, and coming back.
+    chevr:  '<path d="m9 6 6 6-6 6"/>',
+    chevl:  '<path d="m15 6-6 6 6 6"/>',
     close:  '<path d="M6 6l12 12M18 6 6 18"/>',
     box:    '<path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5v-9Z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/>',
     chart:  '<path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6"/>',
@@ -11123,7 +11137,18 @@ const GC_POS = ['ALL','QB','RB','WR','TE','K','DEF','IDP','RK'];   // the Rankin
 const GC_GROUPS = [['QB','Quarterback',['QB']],['RB','Running back',['RB','FB']],['WR','Wide receiver',['WR']],['TE','Tight end',['TE']],['K','Kicker',['K']],['DEF','Defense / ST',['DEF']],['IDP','Defenders',['DL','DE','DT','NT','LB','OLB','ILB','MLB','DB','CB','S','SS','FS']]];
 
 function gcLoadMode(){ try{ const m=localStorage.getItem('tc_rsb'); if(GC_MODES.includes(m)) _gc.mode=m; }catch(e){} }
-function gcSetMode(m){ if(!GC_MODES.includes(m)) return; _gc.mode=m; try{ localStorage.setItem('tc_rsb', m); }catch(e){} renderRightSidebar(); }
+function gcSetMode(m){
+  if(!GC_MODES.includes(m)) return;
+  _gc.mode=m;
+  // the panel the rail reopens to: whichever of the two was up last
+  if(m!=='min'){ _gc.lastOpen=m; try{ localStorage.setItem('tc_rsb_open', m); }catch(e){} }
+  try{ localStorage.setItem('tc_rsb', m); }catch(e){}
+  renderRightSidebar();
+}
+function gcOpenLast(){
+  let m=_gc.lastOpen; if(!m){ try{ m=localStorage.getItem('tc_rsb_open'); }catch(e){} }
+  gcSetMode(m==='max' ? 'max' : 'normal');
+}
 function gcSetWeek(v){ _gc.week = v==='current' ? 'current' : Number(v); _gc.game=null; renderRightSidebar(); }
 // Picking a game from the phone's half-open sheet also pulls the sheet up: the game list is
 // the half state's point, the picked game's lines are the full state's.
@@ -11619,7 +11644,19 @@ function gcHTML(phone){
   </div>`;
 }
 // The size buttons every state carries.
+// The sidebar's controls, each saying what it does: the two panels as a pair — Leaders
+// (the week's top scorers) and Game Center (one game at a time) — with the one that is up
+// lit, and a chevron that tucks the sidebar away. (They were − and +, which stepped through
+// rail → Leaders → Game Center and read as a size, not a choice.)
 function rsbButtonsHTML(){
+  const ico=(k)=>(typeof TC_ICON==='function')?TC_ICON(k):'';
+  const on=(m)=>_gc.mode===m?' active':'';
+  return `<span class="rsb-btns"><span class="rsb-seg" role="tablist" aria-label="Sidebar panel">`
+    + `<button class="rsb-btn rsb-seg-btn${on('normal')}" role="tab" aria-selected="${_gc.mode==='normal'}" onclick="gcSetMode('normal')" title="Leaders — the week's top scorers">${ico('trophy')}</button>`
+    + `<button class="rsb-btn rsb-seg-btn${on('max')}" role="tab" aria-selected="${_gc.mode==='max'}" onclick="gcSetMode('max')" title="Game Center — one game at a time">${ico('scoreboard')}</button>`
+    + `</span><button class="rsb-btn rsb-hide" onclick="gcSetMode('min')" title="Hide the sidebar" aria-label="Hide the sidebar">${ico('chevr')}</button></span>`;
+}
+function _rsbButtonsLegacy(){
   const i=GC_MODES.indexOf(_gc.mode);
   const dis=(on)=>on?'':' disabled';
   return `<span class="rsb-btns"><button class="rsb-btn" onclick="gcStep(-1)" title="Narrower"${dis(i>0)}>−</button><button class="rsb-btn" onclick="gcStep(1)" title="Wider"${dis(i<GC_MODES.length-1)}>+</button></span>`;
@@ -11635,7 +11672,7 @@ function renderRightSidebar(){
   el.hidden=false;
   el.classList.remove('rsb-min','rsb-max');
   gcApplyWidth(el);
-  if(_gc.mode==='min'){ el.classList.add('rsb-min'); el.innerHTML=`<div class="rsb-rail"><button class="rsb-btn" onclick="gcStep(1)" title="Wider">+</button><span class="rsb-vert">LEADERS · GAMES</span></div>`; return; }
+  if(_gc.mode==='min'){ el.classList.add('rsb-min'); el.innerHTML=`<div class="rsb-rail"><button class="rsb-btn rsb-show" onclick="gcOpenLast()" title="Show the sidebar" aria-label="Show the sidebar">${(typeof TC_ICON==='function')?TC_ICON('chevl'):'‹'}</button><span class="rsb-vert">LEADERS · GAMES</span></div>`; return; }
   if(_gc.mode==='max'){ el.classList.add('rsb-max'); tcMorph(el, rsbGripHTML()+gcHTML()); return; }
   if(typeof renderLeaders==='function') renderLeaders();
   if(el.querySelector && el.querySelector('.rsb-grip')) return;   // the grip persists across in-place repaints

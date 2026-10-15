@@ -25,6 +25,9 @@ const TC_ICON = (() => {
     chat:   '<path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z"/><path d="M8.5 10.5h7M8.5 13.5h4"/>',
     scale:  '<path d="M12 4v15M8 19h8M6 7l12-2"/><path d="m6 7-2.3 5.2a2.6 2.6 0 0 0 4.6 0L6 7ZM18 5l-2.3 5.2a2.6 2.6 0 0 0 4.6 0L18 5Z"/>',
     menu:   '<path d="M4 7h16M4 12h16M4 17h16"/>',
+    // Chevrons — a panel tucking away to the right, and coming back.
+    chevr:  '<path d="m9 6 6 6-6 6"/>',
+    chevl:  '<path d="m15 6-6 6 6 6"/>',
     close:  '<path d="M6 6l12 12M18 6 6 18"/>',
     box:    '<path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5v-9Z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/>',
     chart:  '<path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6"/>',

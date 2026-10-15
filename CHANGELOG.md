@@ -6,6 +6,10 @@ this file is the merge history, newest first, one line per PR. Add a line when a
 
 Open work lives in [TODO.md](TODO.md).
 
+## 2026-10-15
+
+- feat(sidebar): the right sidebar's controls say what they do — a Leaders | Game Center pair with the open panel lit and a chevron that hides the sidebar, the rail's chevron reopening whichever was up last — in place of the − and + that stepped through three states (#182)
+
 ## 2026-10-14
 
 - feat(analyzer): the swing replay shows the highlights — a callout per swing with the player's headshot and the play in his club's colour, the clock holding on each — and the hero's scores, projections and win bar move with the sweep; the scrubber carries a dot per swing, a tap on a dot or a pinned mark opens its highlight (#181)
