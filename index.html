@@ -1354,7 +1354,8 @@ tr.rank-starred:hover{background:rgba(210,153,34,.12);}
 /* ── Leaders: the right-hand sidebar (desktop) — this week's top fantasy finishes ── */
 .sidebar.leaders{border-right:none;border-left:1px solid var(--border);padding:8px 0;}
 .sidebar.leaders[hidden]{display:none;}
-.ld-head{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 10px 4px;}
+.ld-head{display:flex;align-items:center;gap:6px;padding:0 10px 4px;}
+.ld-head .ld-title{margin-right:auto;}
 .ld-title{padding:0;margin:0;}
 .ld-sel{font:inherit;font-size:10.5px;font-weight:800;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:3px 6px;max-width:112px;}
 .ld-posrow{display:flex;gap:3px;padding:2px 8px 4px;}
@@ -1388,6 +1389,7 @@ tr.rank-starred:hover{background:rgba(210,153,34,.12);}
 /* ── The right sidebar's sizes: a rail, the Leaders list, the Game Center ── */
 .rsb-btns{display:inline-flex;gap:3px;margin-left:auto;flex:none;}
 .ld-fmt{display:flex;align-items:center;gap:6px;min-width:0;}
+.ld-fmt .ld-sel{margin-left:auto;flex:none;}
 .ld-fmt>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .rsb-btn{font:inherit;font-size:11px;font-weight:900;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:10px;width:22px;height:22px;line-height:1;cursor:pointer;padding:0;}
 .rsb-btn:hover{color:var(--text);border-color:var(--accent);}
@@ -11184,6 +11186,8 @@ function ldRowsHTML(width, phone){
 }
 // The panel's markup, for either home (the desktop sidebar, the phone's Games sheet).
 // `width` decides the names and the columns; `btns` is the home's own controls.
+// Narrower than this the top row cannot hold the title, the week select and the controls.
+const LD_HEAD_SEL_MIN=290;
 function ldPanelHTML(width, btns, fromLoad, phone){
   const season=String(TC_SEASON.year), cur=ldCurWeek(), wk=ldWeek(), seasonMode=ldSeasonMode();
   const key=`${season}|${seasonMode?'season':wk}`;
@@ -11195,9 +11199,14 @@ function ldPanelHTML(width, btns, fromLoad, phone){
     <option value="season" ${seasonMode?'selected':''}>Season</option></select>`;
   const posBtns=LD_POS.map(p=>`<button class="ld-pos ${_ld.pos===p?'active':''}" onclick="ldSetPos('${p}')">${p==='ROOKIE'?'RK':p}</button>`).join('');
   const fmt=(typeof scoringSettings!=='undefined' && scoringSettings.baflMode) ? 'BAFL lens' : ((typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) ? escHtml(leagueSnapshot.name) : 'loaded scoring');
-  return `<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${sel}</div>
+  // The Leaders | Game Center toggle and the hide chevron sit in the top row here as they do
+  // in the Game Center, so they never move between the two panes. The week select shares
+  // that row when the panel is wide enough for all three, and otherwise drops to the
+  // scoring line, where the controls used to be.
+  const selTop = !btns || !(width>0) || width>=LD_HEAD_SEL_MIN;
+  return `<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${selTop?sel:''}${btns||''}</div>
     <div class="ld-posrow">${posBtns}</div>
-    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${!seasonMode&&wk===cur?' · live':(seasonMode&&_ld.week==='current'?` · season to date, until week ${cur} kicks off`:'')}</span>${btns||''}</div>
+    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${!seasonMode&&wk===cur?' · live':(seasonMode&&_ld.week==='current'?` · season to date, until week ${cur} kicks off`:'')}</span>${selTop?'':sel}</div>
     <div class="ld-list">${ldRowsHTML(width, phone)}</div>`;
 }
 // Is the phone's Games sheet showing the Leaders? Then the list lives there, not here.
