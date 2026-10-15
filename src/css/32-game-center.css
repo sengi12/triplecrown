@@ -695,3 +695,14 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .tc-brk tr.neg td{color:var(--danger);}
 .tc-brk tfoot td{font-weight:900;border-top:2px solid var(--border2);}
 .tc-brk-src,.tc-brk-none{font-size:11px;color:var(--muted);margin-top:6px;}
+
+/* the sidebar's controls: Leaders | Game Center as a pair, the hide chevron beside them */
+.rsb-seg{display:inline-flex;border:1px solid var(--border);border-radius:11px;overflow:hidden;background:var(--surface2);}
+.rsb-seg .rsb-btn{border:none;border-radius:0;background:transparent;width:26px;}
+.rsb-seg .rsb-btn+.rsb-btn{border-left:1px solid var(--border);}
+.rsb-seg .rsb-btn.active{background:var(--accent);color:var(--on-accent,#fff);}
+.rsb-seg .rsb-btn.active:hover{color:var(--on-accent,#fff);}
+.rsb-btn .tc-ico{width:14px;height:14px;vertical-align:-2px;}
+.rsb-hide,.rsb-show{width:24px;}
+.rsb-seg .rsb-btn.active .tc-ico,.rsb-seg .rsb-btn.active:hover .tc-ico{color:var(--on-accent,#fff);}
+.rsb-btn .tc-ico{color:currentColor;}

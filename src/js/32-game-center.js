@@ -16,7 +16,18 @@ const GC_POS = ['ALL','QB','RB','WR','TE','K','DEF','IDP','RK'];   // the Rankin
 const GC_GROUPS = [['QB','Quarterback',['QB']],['RB','Running back',['RB','FB']],['WR','Wide receiver',['WR']],['TE','Tight end',['TE']],['K','Kicker',['K']],['DEF','Defense / ST',['DEF']],['IDP','Defenders',['DL','DE','DT','NT','LB','OLB','ILB','MLB','DB','CB','S','SS','FS']]];
 
 function gcLoadMode(){ try{ const m=localStorage.getItem('tc_rsb'); if(GC_MODES.includes(m)) _gc.mode=m; }catch(e){} }
-function gcSetMode(m){ if(!GC_MODES.includes(m)) return; _gc.mode=m; try{ localStorage.setItem('tc_rsb', m); }catch(e){} renderRightSidebar(); }
+function gcSetMode(m){
+  if(!GC_MODES.includes(m)) return;
+  _gc.mode=m;
+  // the panel the rail reopens to: whichever of the two was up last
+  if(m!=='min'){ _gc.lastOpen=m; try{ localStorage.setItem('tc_rsb_open', m); }catch(e){} }
+  try{ localStorage.setItem('tc_rsb', m); }catch(e){}
+  renderRightSidebar();
+}
+function gcOpenLast(){
+  let m=_gc.lastOpen; if(!m){ try{ m=localStorage.getItem('tc_rsb_open'); }catch(e){} }
+  gcSetMode(m==='max' ? 'max' : 'normal');
+}
 function gcSetWeek(v){ _gc.week = v==='current' ? 'current' : Number(v); _gc.game=null; renderRightSidebar(); }
 // Picking a game from the phone's half-open sheet also pulls the sheet up: the game list is
 // the half state's point, the picked game's lines are the full state's.
@@ -512,7 +523,19 @@ function gcHTML(phone){
   </div>`;
 }
 // The size buttons every state carries.
+// The sidebar's controls, each saying what it does: the two panels as a pair — Leaders
+// (the week's top scorers) and Game Center (one game at a time) — with the one that is up
+// lit, and a chevron that tucks the sidebar away. (They were − and +, which stepped through
+// rail → Leaders → Game Center and read as a size, not a choice.)
 function rsbButtonsHTML(){
+  const ico=(k)=>(typeof TC_ICON==='function')?TC_ICON(k):'';
+  const on=(m)=>_gc.mode===m?' active':'';
+  return `<span class="rsb-btns"><span class="rsb-seg" role="tablist" aria-label="Sidebar panel">`
+    + `<button class="rsb-btn rsb-seg-btn${on('normal')}" role="tab" aria-selected="${_gc.mode==='normal'}" onclick="gcSetMode('normal')" title="Leaders — the week's top scorers">${ico('trophy')}</button>`
+    + `<button class="rsb-btn rsb-seg-btn${on('max')}" role="tab" aria-selected="${_gc.mode==='max'}" onclick="gcSetMode('max')" title="Game Center — one game at a time">${ico('scoreboard')}</button>`
+    + `</span><button class="rsb-btn rsb-hide" onclick="gcSetMode('min')" title="Hide the sidebar" aria-label="Hide the sidebar">${ico('chevr')}</button></span>`;
+}
+function _rsbButtonsLegacy(){
   const i=GC_MODES.indexOf(_gc.mode);
   const dis=(on)=>on?'':' disabled';
   return `<span class="rsb-btns"><button class="rsb-btn" onclick="gcStep(-1)" title="Narrower"${dis(i>0)}>−</button><button class="rsb-btn" onclick="gcStep(1)" title="Wider"${dis(i<GC_MODES.length-1)}>+</button></span>`;
@@ -528,7 +551,7 @@ function renderRightSidebar(){
   el.hidden=false;
   el.classList.remove('rsb-min','rsb-max');
   gcApplyWidth(el);
-  if(_gc.mode==='min'){ el.classList.add('rsb-min'); el.innerHTML=`<div class="rsb-rail"><button class="rsb-btn" onclick="gcStep(1)" title="Wider">+</button><span class="rsb-vert">LEADERS · GAMES</span></div>`; return; }
+  if(_gc.mode==='min'){ el.classList.add('rsb-min'); el.innerHTML=`<div class="rsb-rail"><button class="rsb-btn rsb-show" onclick="gcOpenLast()" title="Show the sidebar" aria-label="Show the sidebar">${(typeof TC_ICON==='function')?TC_ICON('chevl'):'‹'}</button><span class="rsb-vert">LEADERS · GAMES</span></div>`; return; }
   if(_gc.mode==='max'){ el.classList.add('rsb-max'); tcMorph(el, rsbGripHTML()+gcHTML()); return; }
   if(typeof renderLeaders==='function') renderLeaders();
   if(el.querySelector && el.querySelector('.rsb-grip')) return;   // the grip persists across in-place repaints

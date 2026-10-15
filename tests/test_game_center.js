@@ -30,7 +30,7 @@ const app=new Function(code+`
   leagueSnapshot={name:'Dirty Mikes', myUserId:'u1', scoringRaw:{pass_yd:0.04,pass_td:4,pass_int:-1,rush_yd:0.1,rush_td:6,rec:0.5,rec_yd:0.1,fgm:3,xpm:1,pts_allow:-0.1,sack:1,idp_tkl:1,idp_sack:2},
     teamList:[{rosterId:1, ownerId:'u1', owner:'Sengi12', teamName:'Sengi', players:[{id:'q1'},{id:'r2'}]},{rosterId:2, ownerId:'u2', owner:'RichBigMeechy', teamName:'Rich', players:[{id:'w2'}]}]};
   _gcd.tab='stats'; _gcd.side='fantasy';   // the fantasy pane, as before the Feed | Stats tabs
-  return { pts:tcSleeperPoints, mode:gcSetMode, step:gcStep, setPos:gcSetPos, sideClass:gcSideClass, setHub:(r)=>{ hubState.results=r; hubState.loadedAt=Date.now(); leagueSnapshot.leagueId='L1'; }, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc, games:()=>gcGames(gcBoard(1)), mine:gcIsMine, maxW:gcMaxWidth, gameHTML:gcGameHTML, weekOpts:gcWeekOptions, gcWeek, board:gcBoard, setHold:(f)=>{tcHoldsFinishedWeek=f;}, setWeek:(w,dw)=>{TC_SEASON.week=w; TC_SEASON.displayWeek=dw;}, breakdown:tcPointsBreakdown, brkHTML:tcBreakdownHTML, playerHTML:gcPlayerHTML, setScoring:(s)=>{scoringSettings=s;}, setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; } };
+  return { pts:tcSleeperPoints, mode:gcSetMode, step:gcStep, openLast:gcOpenLast, setPos:gcSetPos, sideClass:gcSideClass, setHub:(r)=>{ hubState.results=r; hubState.loadedAt=Date.now(); leagueSnapshot.leagueId='L1'; }, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc, games:()=>gcGames(gcBoard(1)), mine:gcIsMine, maxW:gcMaxWidth, gameHTML:gcGameHTML, weekOpts:gcWeekOptions, gcWeek, board:gcBoard, setHold:(f)=>{tcHoldsFinishedWeek=f;}, setWeek:(w,dw)=>{TC_SEASON.week=w; TC_SEASON.displayWeek=dw;}, breakdown:tcPointsBreakdown, brkHTML:tcBreakdownHTML, playerHTML:gcPlayerHTML, setScoring:(s)=>{scoringSettings=s;}, setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -40,12 +40,13 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(app.pts({idp_tkl:9,idp_sack:1},{idp_tkl:1,idp_sack:2})===11 && app.pts({pts_allow:27,sack:2},{pts_allow:-0.1,sack:1})===-0.7, 'defenders and D/ST score off the same table');
   chk(app.pts({pass_yd:100},null)===null, 'no table → no number (the caller falls back)');
 
-  console.log('=== sizes: − and +, a rail, a drag handle ===');
-  app.mode('min'); chk(app.cls().includes('rsb-min') && /rsb-rail/.test(app.html()) && /gcStep\(1\)[^>]*>\+</.test(app.html()) && !/gcStep\(-1\)/.test(app.html()), 'min: a rail with one + button');
-  app.step(1); chk(app.state().mode==='normal' && /Leaders/.test(app.html()) && /gcStep\(-1\)[^>]*>−</.test(app.html()) && /gcStep\(1\)[^>]*>\+</.test(app.html()), '+ → the Leaders, with − and + in its scoring line');
-  app.step(1); await settle(); await settle();
-  chk(app.state().mode==='max' && app.cls().includes('rsb-max') && /Game Center/.test(app.html()), '+ again → the Game Center');
-  chk(/gcStep\(1\)[^>]*disabled/.test(app.html()) && !/gcStep\(-1\)[^>]*disabled/.test(app.html()), 'at the widest, + is disabled and − is not');
+  console.log('=== the sidebar controls: Leaders | Game Center as a pair, hide and show chevrons, a drag handle ===');
+  app.mode('min'); chk(app.cls().includes('rsb-min') && /rsb-rail/.test(app.html()) && /rsb-show[^>]*onclick="gcOpenLast\(\)"/.test(app.html()) && !/gcStep\(/.test(app.html()), 'hidden: a rail with one show chevron, no plus or minus anywhere');
+  app.mode('normal'); chk(app.state().mode==='normal' && /Leaders/.test(app.html()) && /rsb-seg-btn active[^>]*onclick="gcSetMode\('normal'\)"/.test(app.html()) && /rsb-seg-btn"[^>]*onclick="gcSetMode\('max'\)"/.test(app.html()) && /rsb-hide[^>]*onclick="gcSetMode\('min'\)"/.test(app.html()), 'the Leaders: the pair with Leaders lit, Game Center beside it, the hide chevron');
+  app.mode('max'); await settle(); await settle();
+  chk(app.state().mode==='max' && app.cls().includes('rsb-max') && /Game Center/.test(app.html()) && /rsb-seg-btn active[^>]*onclick="gcSetMode\('max'\)"/.test(app.html()), 'the Game Center: the pair with Game Center lit');
+  app.mode('min'); app.openLast(); await settle();
+  chk(app.state().mode==='max', 'the rail reopens to whichever panel was up last');
   chk(global.localStorage._s.tc_rsb==='max', 'the size is remembered');
   chk(/rsb-grip[^>]*onpointerdown="gcGripDown\(event\)"/.test(app.html()), 'the left edge is a drag handle');
   chk(app.maxW()>=260, 'the drag stops at the width of the content area');
