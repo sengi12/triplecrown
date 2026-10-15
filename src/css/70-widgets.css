@@ -1432,3 +1432,21 @@ button.la-cliff:hover{filter:brightness(1.25);}
   .la-th-got{width:100%;}
   .la-th-refresh{margin-left:0;}
 }
+
+/* picked games on the week rail: a tap, a W or an L, the rest dimmed */
+.wr-opp-cell.wr-pickable{pointer-events:auto;cursor:pointer;border-radius:8px;padding:1px 3px;}
+.wr-opp-cell.wr-pickable:hover{background:rgba(255,255,255,.06);}
+.wr-opp-cell.wr-dim{opacity:.35;}
+.wr-opp-cell.wr-picked{--pick:var(--muted2);box-shadow:0 0 0 2px var(--pick);background:color-mix(in srgb,var(--pick) 18%,transparent);opacity:1;}
+.wr-res-W{--pick:var(--success)!important;} .wr-res-L{--pick:var(--danger)!important;} .wr-res-T{--pick:var(--muted2)!important;}
+.wr-res{font-size:9px;font-weight:900;color:var(--pick);margin-left:2px;}
+.week-range-picked{font-size:11px;color:var(--muted);margin:2px 0 4px;}
+.week-range-picked b{color:var(--text);}
+/* the phone's chips: the same taps at thumb size */
+.wr-chips{display:none;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.wr-chip{font:inherit;font-size:11px;font-weight:700;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:5px 9px;cursor:pointer;--pick:var(--muted2);}
+.wr-chip b{color:var(--text);margin-right:2px;}
+.wr-chip.wr-picked{box-shadow:0 0 0 2px var(--pick);background:color-mix(in srgb,var(--pick) 18%,transparent);color:var(--text);}
+.wr-chip .wr-res{margin-left:5px;}
+.wr-chip-clear{color:var(--accent);}
+@media (max-width:760px){ .wr-chips{display:flex;} }

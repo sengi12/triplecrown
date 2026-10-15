@@ -69,8 +69,9 @@ function weekRangeSliderHTML(team,state){
   return `<div class="week-range-card">
     <div class="week-range-label">
       <span>${TC_ICON("calendar")} Filter weeks: <b id="wr-lo-${team}">${Math.min(lo,played)}</b> – <b id="wr-hi-${team}">${hiShown}</b>${played<maxWk?` <span class="week-range-hint">of ${played} played</span>`:''}${state.weekFilterLoading?' <span class="week-range-loading">loading…</span>':''}</span>
-      ${active?`<span class="week-range-reset" onclick="resetWeekRange('${team}')">↺ Reset to full season</span>`:'<span class="week-range-hint">drag either end to zoom into a stretch of games</span>'}
+      ${active?`<span class="week-range-reset" onclick="resetWeekRange('${team}')">↺ Reset to full season</span>`:'<span class="week-range-hint">drag either end to zoom into a stretch of games · or tap a game below to filter to it</span>'}
     </div>
+    ${(state.weekPick&&state.weekPick.length)?`<div class="week-range-picked">Picked game${state.weekPick.length>1?'s':''}: <b>wk ${state.weekPick.join(', ')}</b> · click off to clear</div>`:''}
     <div class="dual-slider">
       <div class="dual-slider-track"></div>
       ${dead}<div class="dual-slider-fill" id="wr-fill-${team}" style="left:${loPct}%;right:${hiPct}%"></div>
@@ -80,6 +81,7 @@ function weekRangeSliderHTML(team,state){
         oninput="weekRangeDrag('${team}','hi',this.value)" onchange="weekRangeCommit('${team}')">
       ${oppRail}
     </div>
+    ${(typeof weekPickChipsHTML==='function')?weekPickChipsHTML(team, activeSeason):''}
   </div>`;
 }
 function setPassSub(t){passingSubTab=t;renderContent();}
