@@ -1450,3 +1450,10 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .wr-chip .wr-res{margin-left:5px;}
 .wr-chip-clear{color:var(--accent);}
 @media (max-width:760px){ .wr-chips{display:flex;} }
+
+/* the result on a picked game: a solid badge on the logo's corner — white W on green, L on red */
+.wr-opp-ico{position:relative;display:inline-flex;align-items:center;}
+.wr-opp-ico .wr-res-badge{position:absolute;top:-7px;right:-9px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:900;line-height:1;color:#fff;background:var(--pick);margin:0;box-shadow:0 0 0 1.5px var(--surface2);}
+.wr-opp-cell.wr-picked{box-shadow:0 0 0 2px var(--pick);}
+.wr-chip .wr-res{color:#fff;background:var(--pick);border-radius:7px;padding:1px 4px;font-size:9.5px;}

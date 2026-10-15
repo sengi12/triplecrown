@@ -51,7 +51,7 @@ chk(m && m.CIN[1].res==='W' && m.CIN[1].pf===27 && m.CIN[1].pa===24 && m.CIN[2].
 app.setSched(m); app.setWeek(4);
 app.setProj('CIN', {weekPick:[2], rushing:{}, passing_shares:null});
 const r=app.rail('CIN','wr-opp-main');
-chk(/wr-pickable[^"]*wr-picked wr-res-W[^>]*onclick="weekPickToggle\('CIN',2,event\)"/.test(r) && /<span class="wr-res">W<\/span>/.test(r), 'the picked game wears its result — a green W — and a tap drops it');
+chk(/wr-pickable[^"]*wr-picked wr-res-W[^>]*onclick="weekPickToggle\('CIN',2,event\)"/.test(r) && /<span class="wr-res wr-res-badge" aria-label="Win">W<\/span>/.test(r), 'the picked game wears its result — a W badge on the logo’s corner — and a tap drops it');
 chk(/wr-pickable wr-dim[^>]*onclick="weekPickToggle\('CIN',1,event\)"/.test(r), 'the other played games dim while a pick is on, and stay a tap');
 chk(!/weekPickToggle\('CIN',3/.test(r) || /wr-pickable[^>]*weekPickToggle\('CIN',3/.test(r), 'week 3 (played, no score yet) is still pickable');
 chk(!/weekPickToggle/.test(app.rail('CIN','wr-opp-adv')), 'the Adv Metrics rail keeps its own week range: no taps there');

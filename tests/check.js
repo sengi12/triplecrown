@@ -514,8 +514,7 @@ function renderWeekOpponentRail(team, season, className=''){
     const tap = canPick ? ` role="button" tabindex="0" onclick="weekPickToggle('${tm}',${wk},event)" onkeydown="if(event.key==='Enter'||event.key===' '){weekPickToggle('${tm}',${wk},event);}"` : '';
     cells.push(`<div class="wr-opp-cell${laneCls}${pickCls}" style="left:${pos}" title="Week ${wk}: ${ha} ${opp}${score}${canPick?(on?' · tap to drop':' · tap to filter to this game'):''}"${tap}>
       <span class="wr-opp-stem"></span>
-      ${logo?`<img src="${logo}" class="wr-opp-logo" alt="${opp}" onerror="this.style.display='none'">`:`<span class="wr-opp-fallback">${opp}</span>`}
-      ${(on && m.res)?`<span class="wr-res">${m.res}</span>`:''}
+      <span class="wr-opp-ico">${logo?`<img src="${logo}" class="wr-opp-logo" alt="${opp}" onerror="this.style.display='none'">`:`<span class="wr-opp-fallback">${opp}</span>`}${(on && m.res)?`<span class="wr-res wr-res-badge" aria-label="${m.res==='W'?'Win':m.res==='L'?'Loss':'Tie'}">${m.res}</span>`:''}</span>
     </div>`);
   }
   return `<div class="wr-opp-rail ${className}">${cells.join('')}</div>`;
