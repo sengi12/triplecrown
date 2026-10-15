@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-15
 
+- fix(team): the week rail's schedule is fetched fresh each load (force-cache had frozen a pre-score copy on desktop, hiding every W and L), the results are bare green W / red L letters instead of circle badges, and the phone's card folds to the slider until a tap opens the game chips (#188)
 - fix(team): every played game on the week rail wears its W or L — green and red badges on the logos and the phone chips before anything is tapped; a pick still rings its game and dims the rest (#187)
 - feat(card): tap the contract band on a player card and it opens the deal year by year — base, bonuses, cap hit with its share, dead cap, cut savings — with the season in progress lit, void years marked and a POTENTIAL OUT divider before the first year a cut saves cap; the builder follows OverTheCap's player links for the table, cached per deal (#185)
 - fix(sidebar): the Leaders | Game Center toggle and the hide chevron sit in the top row of the Leaders pane too, so they stay put when switching panes; the week select shares that row when the panel is wide enough and otherwise drops to the scoring line (#186)

@@ -66,10 +66,12 @@ function weekRangeSliderHTML(team,state){
   const oppRail = (typeof renderWeekOpponentRail==='function')
     ? renderWeekOpponentRail(team, activeSeason, 'wr-opp-main')
     : '';
-  return `<div class="week-range-card">
+  const open=(typeof _wrChipsOpen!=='undefined' && _wrChipsOpen);
+  return `<div class="week-range-card${open?' wr-open':''}" onclick="weekCardTap(event)">
     <div class="week-range-label">
       <span>${TC_ICON("calendar")} Filter weeks: <b id="wr-lo-${team}">${Math.min(lo,played)}</b> – <b id="wr-hi-${team}">${hiShown}</b>${played<maxWk?` <span class="week-range-hint">of ${played} played</span>`:''}${state.weekFilterLoading?' <span class="week-range-loading">loading…</span>':''}</span>
-      ${active?`<span class="week-range-reset" onclick="resetWeekRange('${team}')">↺ Reset to full season</span>`:'<span class="week-range-hint">drag either end to zoom into a stretch of games · or tap a game below to filter to it</span>'}
+      ${active?`<span class="week-range-reset" onclick="resetWeekRange('${team}')">↺ Reset to full season</span>`:'<span class="week-range-hint week-range-help">drag either end to zoom into a stretch of games · or tap a game below to filter to it</span>'}
+      <span class="wr-more" aria-hidden="true">${open?'hide ▴':'games ▾'}</span>
     </div>
     ${(state.weekPick&&state.weekPick.length)?`<div class="week-range-picked">Picked game${state.weekPick.length>1?'s':''}: <b>wk ${state.weekPick.join(', ')}</b> · click off to clear</div>`:''}
     <div class="dual-slider">

@@ -17,7 +17,9 @@ const app=new Function(code+`
     parse:_parseWeeklySchedule, rail:(team,cls)=>renderWeekOpponentRail(team,'2026',cls), setSched:(m)=>{ _weeklyOppBySeason['2026']=m; }, setProj:(t,st)=>{ userProj[t]=st; }, picks:weekPicks, chips:(t)=>weekPickChipsHTML(t,'2026'), sumR:sumWeeklyRange, sumQ:sumWeeklyRangeQB,
     oppRail:(team)=>{ _weeklyOppBySeason['2026']={[team]:{1:{opp:'GB',home:true},2:{opp:'CHI',home:false},3:{opp:'BAL',home:true}}}; return renderWeekOpponentRail(team,'2026'); },
     advCard:(team)=>{ _advWeeklySeedReady=true; _advSeasonCanRange=()=>true; _advEnsureWeeklyLoaded=()=>{}; advTeamSeason=()=>'2026'; return renderAdvWeekRange(team,{showOppRail:false}); },
-    advDrag:(team,which,v)=>{ advWeekRangeDrag(team,which,v); return document.getElementById('adv-wr-hi-'+team).textContent+'|'+document.getElementById('adv-wr-lo-'+team).textContent; } };
+    advDrag:(team,which,v)=>{ advWeekRangeDrag(team,which,v); return document.getElementById('adv-wr-hi-'+team).textContent+'|'+document.getElementById('adv-wr-lo-'+team).textContent; },
+    card:(team)=>{ activeSeason='2026'; getSharedWeekRange=()=>[1,18]; isWeekFilterActive=()=>false; return weekRangeSliderHTML(team, userProj[team]); },
+    tap:weekCardTap, ensure:ensureWeeklyOppSchedule, noRender:()=>{ renderContent=()=>{}; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 console.log('=== the week a team has played through ===');
@@ -66,5 +68,28 @@ app.setProj('CIN', {weekPick:[1], rushing:{}});
 const ch=app.chips('CIN');
 chk((ch.match(/class="wr-chip[ "]/g)||[]).length===4 && /wr-chip wr-picked wr-res-W[^>]*onclick="weekPickToggle\('CIN',1,event\)"/.test(ch) && /wr-chip-clear/.test(ch), 'the phone\'s chips: one per played game, the picked one lit with its result, and a clear chip while a pick is on');
 chk((ch.match(/class="wr-chip wr-res-W"/g)||[]).length===1 && (ch.match(/class="wr-chip"/g)||[]).length===1, 'the other chips carry their W or L too, unlit; the unscored game’s chip has none');
+(async()=>{
+console.log('=== the phone card: compact until a tap opens the chips ===');
+let cd=app.card('CIN');
+chk(/<div class="week-range-card" onclick="weekCardTap\(event\)">/.test(cd) && /week-range-hint week-range-help/.test(cd) && /<span class="wr-more" aria-hidden="true">games ▾<\/span>/.test(cd) && /wr-chips/.test(cd), 'the card is a tap; closed it says "games ▾", the long hint and the chips are there for CSS to hide on a phone');
+const fakeCard={on:false, classList:{contains(){ return fakeCard.on; }, toggle(c,v){ fakeCard.on=v; }}, querySelector:()=>fakeCard.more, more:{textContent:''}};
+const mk=(hit)=>({target:{closest:(sel)=>hit && sel.indexOf(hit)>=0 ? fakeCard : (sel==='.week-range-card'?fakeCard:null)}});
+app.tap(mk('.wr-chip'));
+chk(!fakeCard.on, 'a tap on a chip is the chip’s, not the card’s');
+app.tap(mk(null));
+chk(fakeCard.on && fakeCard.more.textContent==='hide ▴' && /week-range-card wr-open"/.test(app.card('CIN')) && /hide ▴/.test(app.card('CIN')), 'a tap on the card opens it — the class flips on the spot and a re-render keeps it open');
+app.tap(mk(null));
+chk(!fakeCard.on && !/wr-open/.test(app.card('CIN')), 'another tap closes it');
+
+console.log('=== the schedule is re-validated each load; the cached copy only serves offline ===');
+app.noRender();
+const calls=[];
+global.fetch=async(url,opts)=>{ if(!/games\.csv/.test(String(url))) return {ok:false, text:async()=>''}; calls.push((opts||{}).cache); if((opts||{}).cache==='no-cache') throw new Error('offline'); return {ok:true, text:async()=>'season,game_type,week,home_team,away_team,home_score,away_score\n2025,REG,1,CIN,KC,10,13'}; };
+const ok=await app.ensure('2025');
+chk(ok===true && calls.join(',')==='no-cache,force-cache', 'no-cache first (an ETag revalidation, so a new week’s scores land), the force-cache copy only when that fails');
+calls.length=0;
+global.fetch=async(url,opts)=>{ if(!/games\.csv/.test(String(url))) return {ok:false, text:async()=>''}; calls.push((opts||{}).cache); return {ok:true, text:async()=>'season,game_type,week,home_team,away_team,home_score,away_score\n2024,REG,1,CIN,KC,10,13'}; };
+chk((await app.ensure('2024'))===true && calls.join(',')==='no-cache', 'online: one request, never the stale copy');
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
+})();

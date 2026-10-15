@@ -417,6 +417,17 @@ function _csvRow(line){
   out.push(cur);
   return out;
 }
+// games.csv gains a week of scores every Monday, so it is re-validated on every load (the
+// browser sends its ETag; GitHub answers 304 when nothing changed). Only when that request
+// fails — offline — does the cached copy serve. It used to be force-cache, and a browser that
+// had cached the file before the season's scores existed never saw a result again.
+async function _fetchWeeklySchedule(){
+  try{
+    const r = await fetch(WEEKLY_SCHEDULE_URL, {cache:'no-cache'});
+    if(r && r.ok) return r;
+  }catch(e){}
+  return fetch(WEEKLY_SCHEDULE_URL, {cache:'force-cache'});
+}
 async function ensureWeeklyOppSchedule(season){
   const s=String(season||'');
   if(!/^\d{4}$/.test(s)) return false;
@@ -424,8 +435,8 @@ async function ensureWeeklyOppSchedule(season){
   if(_weeklyOppPromise[s]) return _weeklyOppPromise[s];
   _weeklyOppPromise[s] = (async()=>{
     try{
-      const r = await fetch(WEEKLY_SCHEDULE_URL, {cache:'force-cache'});
-      if(!r.ok) return false;
+      const r = await _fetchWeeklySchedule();
+      if(!r || !r.ok) return false;
       const txt = await r.text();
       const map=_parseWeeklySchedule(txt, s);
       if(!map) return false;
@@ -545,6 +556,17 @@ function weekPickClear(team){
   const state=(typeof userProj!=='undefined' && userProj) ? userProj[team] : null; if(!state) return;
   state.weekPick=null;
   resetWeekRange(team);
+}
+// The phone's card is compact — the slider and its rail — until a tap inside it opens the
+// row of game chips; a tap on a thumb, a chip, a game or the reset link is its own thing.
+let _wrChipsOpen=false;
+function weekCardTap(ev){
+  const t=ev && ev.target;
+  if(t && t.closest && t.closest('.wr-chip, .wr-opp-cell, .week-range-reset, input, .tc-info-pop, #tcInfoPop')) return;
+  const card=(t && t.closest) ? t.closest('.week-range-card') : null; if(!card) return;
+  _wrChipsOpen=!card.classList.contains('wr-open');
+  card.classList.toggle('wr-open', _wrChipsOpen);
+  const more=card.querySelector('.wr-more'); if(more) more.textContent=_wrChipsOpen?'hide ▴':'games ▾';
 }
 // A click anywhere off the week card clears the picks — the "click off when you're done".
 if(typeof document!=='undefined' && document.addEventListener){
@@ -7762,10 +7784,12 @@ function weekRangeSliderHTML(team,state){
   const oppRail = (typeof renderWeekOpponentRail==='function')
     ? renderWeekOpponentRail(team, activeSeason, 'wr-opp-main')
     : '';
-  return `<div class="week-range-card">
+  const open=(typeof _wrChipsOpen!=='undefined' && _wrChipsOpen);
+  return `<div class="week-range-card${open?' wr-open':''}" onclick="weekCardTap(event)">
     <div class="week-range-label">
       <span>${TC_ICON("calendar")} Filter weeks: <b id="wr-lo-${team}">${Math.min(lo,played)}</b> – <b id="wr-hi-${team}">${hiShown}</b>${played<maxWk?` <span class="week-range-hint">of ${played} played</span>`:''}${state.weekFilterLoading?' <span class="week-range-loading">loading…</span>':''}</span>
-      ${active?`<span class="week-range-reset" onclick="resetWeekRange('${team}')">↺ Reset to full season</span>`:'<span class="week-range-hint">drag either end to zoom into a stretch of games · or tap a game below to filter to it</span>'}
+      ${active?`<span class="week-range-reset" onclick="resetWeekRange('${team}')">↺ Reset to full season</span>`:'<span class="week-range-hint week-range-help">drag either end to zoom into a stretch of games · or tap a game below to filter to it</span>'}
+      <span class="wr-more" aria-hidden="true">${open?'hide ▴':'games ▾'}</span>
     </div>
     ${(state.weekPick&&state.weekPick.length)?`<div class="week-range-picked">Picked game${state.weekPick.length>1?'s':''}: <b>wk ${state.weekPick.join(', ')}</b> · click off to clear</div>`:''}
     <div class="dual-slider">
