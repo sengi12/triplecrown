@@ -4395,6 +4395,13 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .wr-chip .wr-res{margin-left:5px;}
 .wr-chip-clear{color:var(--accent);}
 @media (max-width:760px){ .wr-chips{display:flex;} }
+
+/* the result on a picked game: a solid badge on the logo's corner — white W on green, L on red */
+.wr-opp-ico{position:relative;display:inline-flex;align-items:center;}
+.wr-opp-ico .wr-res-badge{position:absolute;top:-7px;right:-9px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:900;line-height:1;color:#fff;background:var(--pick);margin:0;box-shadow:0 0 0 1.5px var(--surface2);}
+.wr-opp-cell.wr-picked{box-shadow:0 0 0 2px var(--pick);}
+.wr-chip .wr-res{color:#fff;background:var(--pick);border-radius:7px;padding:1px 4px;font-size:9.5px;}
 /* ── In-season: pace view + Live/Pace mode segment (League Analyzer in-season
       tabs also style from here — sorts after 70-widgets so .la-* overrides win) ── */
 
@@ -6869,8 +6876,7 @@ function renderWeekOpponentRail(team, season, className=''){
     const tap = canPick ? ` role="button" tabindex="0" onclick="weekPickToggle('${tm}',${wk},event)" onkeydown="if(event.key==='Enter'||event.key===' '){weekPickToggle('${tm}',${wk},event);}"` : '';
     cells.push(`<div class="wr-opp-cell${laneCls}${pickCls}" style="left:${pos}" title="Week ${wk}: ${ha} ${opp}${score}${canPick?(on?' · tap to drop':' · tap to filter to this game'):''}"${tap}>
       <span class="wr-opp-stem"></span>
-      ${logo?`<img src="${logo}" class="wr-opp-logo" alt="${opp}" onerror="this.style.display='none'">`:`<span class="wr-opp-fallback">${opp}</span>`}
-      ${(on && m.res)?`<span class="wr-res">${m.res}</span>`:''}
+      <span class="wr-opp-ico">${logo?`<img src="${logo}" class="wr-opp-logo" alt="${opp}" onerror="this.style.display='none'">`:`<span class="wr-opp-fallback">${opp}</span>`}${(on && m.res)?`<span class="wr-res wr-res-badge" aria-label="${m.res==='W'?'Win':m.res==='L'?'Loss':'Tie'}">${m.res}</span>`:''}</span>
     </div>`);
   }
   return `<div class="wr-opp-rail ${className}">${cells.join('')}</div>`;

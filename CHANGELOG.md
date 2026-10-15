@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-15
 
+- fix(team): a picked game's result is a solid badge on the logo's corner — white W on green, L on red — instead of a small coloured letter beside it (#184)
 - feat(team): tap a game on a team page's week rail to filter to it — the game wears its W or L from the schedule's scores, the rest dim, tap more to add them, click off the card to clear; phones get a row of chips under the slider at thumb size (#183)
 - feat(sidebar): the right sidebar's controls say what they do — a Leaders | Game Center pair with the open panel lit and a chevron that hides the sidebar, the rail's chevron reopening whichever was up last — in place of the − and + that stepped through three states (#182)
 
