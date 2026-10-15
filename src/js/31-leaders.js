@@ -193,6 +193,8 @@ function ldRowsHTML(width, phone){
 }
 // The panel's markup, for either home (the desktop sidebar, the phone's Games sheet).
 // `width` decides the names and the columns; `btns` is the home's own controls.
+// Narrower than this the top row cannot hold the title, the week select and the controls.
+const LD_HEAD_SEL_MIN=290;
 function ldPanelHTML(width, btns, fromLoad, phone){
   const season=String(TC_SEASON.year), cur=ldCurWeek(), wk=ldWeek(), seasonMode=ldSeasonMode();
   const key=`${season}|${seasonMode?'season':wk}`;
@@ -204,9 +206,14 @@ function ldPanelHTML(width, btns, fromLoad, phone){
     <option value="season" ${seasonMode?'selected':''}>Season</option></select>`;
   const posBtns=LD_POS.map(p=>`<button class="ld-pos ${_ld.pos===p?'active':''}" onclick="ldSetPos('${p}')">${p==='ROOKIE'?'RK':p}</button>`).join('');
   const fmt=(typeof scoringSettings!=='undefined' && scoringSettings.baflMode) ? 'BAFL lens' : ((typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) ? escHtml(leagueSnapshot.name) : 'loaded scoring');
-  return `<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${sel}</div>
+  // The Leaders | Game Center toggle and the hide chevron sit in the top row here as they do
+  // in the Game Center, so they never move between the two panes. The week select shares
+  // that row when the panel is wide enough for all three, and otherwise drops to the
+  // scoring line, where the controls used to be.
+  const selTop = !btns || !(width>0) || width>=LD_HEAD_SEL_MIN;
+  return `<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${selTop?sel:''}${btns||''}</div>
     <div class="ld-posrow">${posBtns}</div>
-    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${!seasonMode&&wk===cur?' · live':(seasonMode&&_ld.week==='current'?` · season to date, until week ${cur} kicks off`:'')}</span>${btns||''}</div>
+    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${!seasonMode&&wk===cur?' · live':(seasonMode&&_ld.week==='current'?` · season to date, until week ${cur} kicks off`:'')}</span>${selTop?'':sel}</div>
     <div class="ld-list">${ldRowsHTML(width, phone)}</div>`;
 }
 // Is the phone's Games sheet showing the Leaders? Then the list lives there, not here.

@@ -102,6 +102,17 @@ console.log('=== long stat labels stack their words ===');
   chk(app.hidden()===true, 'off-season: hidden');
   app.setStarted(true); app.render();
   chk(app.hidden()===false, 'back in season on a desktop: shown');
+
+  console.log('=== the sidebar controls sit in the top row, whatever the width ===');
+  app.setWidth(200); app.render(); await settle(); h=app.html();
+  let head=(h.match(/<div class="ld-head">[\s\S]*?<\/div>\s*<div class="ld-posrow">/)||[''])[0];
+  chk(/rsb-seg/.test(head) && /onclick="gcSetMode\('normal'\)"/.test(head) && !/ld-sel/.test(head), 'narrow: the Leaders | Game Center toggle is in the top row and the week select is not');
+  chk(/<div class="ld-fmt">[\s\S]*?<select class="ld-sel"/.test(h) && !/<div class="ld-fmt">[\s\S]*?rsb-seg[\s\S]*?<div class="ld-list">/.test(h), 'narrow: the week select rides the scoring line, with no controls down there');
+  app.setWidth(320); app.render(); await settle(); h=app.html();
+  head=(h.match(/<div class="ld-head">[\s\S]*?<\/div>\s*<div class="ld-posrow">/)||[''])[0];
+  chk(/ld-title">Leaders<\/div><select class="ld-sel"[\s\S]*?rsb-seg/.test(head), 'wide: title, week select, then the controls, all in the top row');
+  app.setWidth(200);
+
   console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
   process.exit(pass===total?0:1);
 })();
