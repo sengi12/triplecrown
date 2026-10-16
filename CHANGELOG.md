@@ -6,6 +6,10 @@ this file is the merge history, newest first, one line per PR. Add a line when a
 
 Open work lives in [TODO.md](TODO.md).
 
+## 2026-10-16
+
+- fix(team): the week rail's W and L ride the logo's outer corner — top-right above the slider line, bottom-right below it — a size smaller and tucked onto the logo, so nothing sits on the line (#190)
+
 ## 2026-10-15
 
 - fix(game-center): punts and kickoffs hang higher on the drive chart — the arc's peak clears the field's top edge and stays under the yard numbers; a throw is unchanged (#189)
