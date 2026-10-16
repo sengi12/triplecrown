@@ -4423,8 +4423,15 @@ button.la-cliff:hover{filter:brightness(1.25);}
 
 /* the result on every played game: a bare letter on the logo's corner — green W, red L */
 .wr-opp-ico{position:relative;display:inline-flex;align-items:center;}
-.wr-opp-ico .wr-res-badge{position:absolute;top:-9px;right:-9px;font-size:12px;font-weight:900;line-height:1;color:var(--pick);margin:0;
+/* the letter rides the logo's outer corner, away from the slider line: top-right on a logo
+   above the line, bottom-right on one below it, tucked a little onto the logo itself */
+.wr-opp-ico .wr-res-badge{position:absolute;top:-6px;right:-5px;font-size:10.5px;font-weight:900;line-height:1;color:var(--pick);margin:0;
   text-shadow:0 0 2px var(--surface2),0 0 2px var(--surface2),0 1px 2px var(--surface2);}
+.wr-opp-bottom .wr-opp-ico .wr-res-badge{top:auto;bottom:-6px;}
+@media (max-width:760px){
+  .wr-opp-ico .wr-res-badge{font-size:9.5px;top:-5px;right:-4px;}
+  .wr-opp-bottom .wr-opp-ico .wr-res-badge{top:auto;bottom:-5px;}
+}
 .wr-opp-cell.wr-picked{box-shadow:0 0 0 2px var(--pick);}
 .wr-chip .wr-res{color:var(--pick);font-size:11px;padding:0;margin-left:6px;}
 /* the phone's card is the slider and its rail until a tap opens the chips; the games ▾ / hide ▴
