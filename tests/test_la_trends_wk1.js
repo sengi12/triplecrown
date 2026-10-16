@@ -28,7 +28,8 @@ const app=new Function(code+`
     teamList:[{rosterId:1, ownerId:'me', teamName:'Mine', players:[{id:'6',name:'Jaxon Smith-Njigba',pos:'WR',team:'SEA'},{id:'1',name:'Star Back',pos:'RB',team:'NE'}]},
               {rosterId:2, ownerId:'u2', teamName:'Theirs', players:[{id:'7',name:'Tee Higgins',pos:'WR',team:'CIN'}]}]};
   leagueSnapshot=s; currentPhase='League';
-  return { trends:(tab,scope)=>{ laState.trndTab=tab; laState.trndScope=scope||'league'; return laTrendsView(s); }, TC_SEASON, addWeek2:()=>{ wk1.g6.w['2']=[4,3,30,0,20,0,0,0,0,0,0,0,1,30]; wk1.g1.w['2']=[5,4,40,0,6,20,90,1,0,0,0,0,4,28]; wk1.g9.w['2']=[1,1,5,0,2,6,20,0,0,0,0,0,0,30]; wk1.g7.w['2']=[9,7,90,1,70,0,0,0,0,0,0,0,5,33]; TC_INSEASON.weeks=[1,2]; } };
+  return { trends:(tab,scope)=>{ laState.trndTab=tab; laState.trndScope=scope||'league'; return laTrendsView(s); }, TC_SEASON, addWeek2:()=>{ wk1.g6.w['2']=[4,3,30,0,20,0,0,0,0,0,0,0,1,30]; wk1.g1.w['2']=[5,4,40,0,6,20,90,1,0,0,0,0,4,28]; wk1.g9.w['2']=[1,1,5,0,2,6,20,0,0,0,0,0,0,30]; wk1.g7.w['2']=[9,7,90,1,70,0,0,0,0,0,0,0,5,33]; TC_INSEASON.weeks=[1,2]; },
+    info:()=>TC_INFO_BOOK.la_role_trends.body(), setInj:(pid,st)=>{ sleeperPlayers[pid].injury_status=st; }, addPlayer:(g,obj)=>{ wk1[g]=obj; }, delPlayer:(g)=>{ delete wk1[g]; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 app.TC_SEASON.year=2026; app.TC_SEASON.phase='regular'; app.TC_SEASON.week=2;   // week 1 complete
@@ -57,9 +58,27 @@ app.TC_SEASON.year=2026; app.TC_SEASON.phase='regular'; app.TC_SEASON.week=2;   
   console.log('=== week 2: week-over-week takes over ===');
   app.addWeek2(); app.TC_SEASON.week=3;
   h=app.trends('trending','league');
-  chk(/TRENDING · LAST WEEK VS THE ONE BEFORE/.test(h) && /TRENDING UP/.test(h), 'two weeks: the latest against the one before');
-  chk(/Tee Higgins/.test(h.slice(0, h.indexOf('TRENDING DOWN'))) && /Jaxon Smith-Njigba/.test(h.slice(h.indexOf('TRENDING DOWN'), h.indexOf('TRENDING ON SLEEPER'))), 'Higgins (2 → 9 targets) trends up, JSN (11 → 4) down');
+  chk(/ROLE TRENDS · WK 2 VS WK 1/.test(h) && /tgt share \(WR\/TE\) · touches\/gm \(RB\)/.test(h) && /tc-info-btn[^>]*onclick="tcInfoPop\(event,'la_role_trends'\)"/.test(h) && /TRENDING UP · role growing/.test(h) && /TRENDING DOWN · role shrinking/.test(h), 'two weeks: the board names its metrics and weeks in one short line, the method behind an ⓘ');
+  const info=app.info(); chk(/share of his team’s targets/.test(info) && /wk 2<\/b>\) is set against the one before it \(<b>wk 1/.test(info) && /pooled over the window’s games/.test(info) && /Held out/.test(info), 'the ⓘ explains the metric, the live window, the pooling and the hold-outs');
+  const upH=h.slice(0, h.indexOf('TRENDING DOWN')), dnH=h.slice(h.indexOf('TRENDING DOWN'), h.indexOf('TRENDING ON SLEEPER'));
+  chk(/Tee Higgins/.test(upH) && /Jaxon Smith-Njigba/.test(dnH), 'Higgins (2 → 9 targets) trends up, JSN (11 → 4) down');
+  chk(/Tee Higgins[\s\S]*?6\.1% → <b>27\.3%<\/b> tgt share/.test(upH) && /\+21\.2%<\/b><span class="la-trnd-cap">tgt share · wk 2 vs wk 1/.test(upH), 'a receiver’s line shows the share before and after (2/33 → 9/33) and the verdict names the metric and the weeks');
+  chk(/Star Back[\s\S]*?15\.0 → <b>25\.0<\/b> touches\/gm/.test(upH) && /\+10\.0<\/b><span class="la-trnd-cap">touches\/gm/.test(upH), 'a back trends on touches per game (15 → 25), no percent sign');
+  chk(/Free Back/.test(dnH) && /20\.0 → <b>7\.0<\/b> touches\/gm/.test(dnH), 'Free Back (20 → 7 touches) trends down');
   chk(/TRENDING ON SLEEPER/.test(h), 'and the Sleeper board still rides under it');
+
+  console.log('=== injured, absent and bye-week players ===');
+  app.setInj('7','IR'); h=app.trends('trending','league');
+  chk(!/Tee Higgins/.test(h.slice(0, h.indexOf('TRENDING ON SLEEPER'))) && /1 held out/.test(h) && /Injured \(1\)<\/b><\/p><div class="tc-info-list">Tee Higgins <span class="muted">IR<\/span>/.test(app.info()), 'a player on IR is off the board, counted in the bar and named in the ⓘ — a trend that stopped at the training room predicts nothing');
+  app.setInj('7','');
+  // a Seahawk with a week-1 row and none in week 2 while his team played: absent, not a faller
+  app.addPlayer('g8',{n:'gone guy',p:'WR',t:'SEA',w:{'1':[9,6,80,0,60,0,0,0,0,0,0,0,2,30]}});
+  // a receiver whose team did not play week 2 at all: a bye, so no recent window — not ranked, not held
+  app.addPlayer('g5',{n:'bye guy',p:'WR',t:'BYE',w:{'1':[9,6,80,0,60,0,0,0,0,0,0,0,2,30]}});
+  h=app.trends('trending','league');
+  chk(!/Gone Guy/.test(h.slice(0, h.indexOf('TRENDING ON SLEEPER'))) && /Missed every recent game \(1\)<\/b><\/p><div class="tc-info-list">Gone Guy/.test(app.info()), 'a player who missed every recent game is held out as absent (named in the ⓘ), not shown as a −30% faller');
+  chk(!/Bye Guy/.test(h), 'a team on bye has no recent window: its players are neither ranked nor held out');
+  app.delPlayer('g8'); app.delPlayer('g5');
 
   console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
   process.exit(pass===total?0:1);
