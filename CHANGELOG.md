@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-16
 
+- fix(analyzer): the Trending board says what it measures — one short bar with an ⓘ for the method and the held-out names — holds out injured, absent and returning players, anchors its windows to the sidecar's complete weeks with byes skipped, and pools target shares over the window (#191)
 - fix(team): the week rail's W and L ride the logo's outer corner — top-right above the slider line, bottom-right below it — a size smaller and tucked onto the logo, so nothing sits on the line (#190)
 
 ## 2026-10-15

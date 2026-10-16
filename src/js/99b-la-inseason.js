@@ -1162,7 +1162,7 @@ function laTrendsView(s){
   const bar=`<div class="la-trnd-bar"><div class="la-pane-tabs la-trnd-tabs">${tabs}</div>
     ${scopes?`<div class="la-trnd-scoperow"><span class="tc-label">Scope</span>${scopes}</div>`:''}</div>`;
   const two=(title,sub,upLbl,upRows,dnLbl,dnRows)=>`
-    <div class="la-ins-bar"><span class="la-ins-lbl">${title}</span><span class="la-ins-sub">${sub}</span></div>
+    <div class="la-ins-bar la-trnd-barhd"><span class="la-ins-lbl la-trnd-lbl">${title}</span><span class="la-ins-sub">${sub}</span></div>
     <div class="card la-trnd-card"><div class="la-trnd-cols">
       <div><div class="la-trnd-h la-trnd-up">${upLbl}</div>${upRows||'<div class="la-ins-sub">nobody in this scope yet</div>'}</div>
       <div><div class="la-trnd-h la-trnd-dn">${dnLbl}</div>${dnRows||'<div class="la-ins-sub">nobody in this scope yet</div>'}</div>
@@ -1358,40 +1358,123 @@ function laTrendsView(s){
   } else { // trending — the Sleeper-style headline board
     const U=_laUsagePlayers();
     const sleeperBoard=_laSleeperTrendingHTML(keeps, mineMark);
+    // The windows ride the weeks the sidecar actually carries (every one of them complete),
+    // never the calendar: on a Tuesday the calendar says week 6 is done while the sidecar
+    // still ends at 5, and a window anchored to 6 would read a week of zeros.
+    const weeksAll=U ? _laSidecarWeeks(U) : [];
     if(!U) body=needSidecar()+sleeperBoard;
-    else if(wk<2) body=_laWeekBreakoutsHTML(U, wk, keeps, mineMark)+sleeperBoard;
+    else if(weeksAll.length<2) body=_laWeekBreakoutsHTML(U, wk, keeps, mineMark)+sleeperBoard;
     else {
-      // Two weeks: the latest against the one before; from four, the last three against the
-      // three before — the window grows with the season.
-      const R=Math.min(3, Math.max(1, Math.floor(wk/2))), P=R;
-      const trend=[];
-      U.players.forEach(p=>{
-        if(!keeps(_laDisplayName(p,p.id),p.pos)) return;
-        const wks=p.weeks; if(wks.length<2) return;
-        const recent=wks.slice(-R), prior=wks.slice(0,-R).slice(-P);
-        if(prior.length<1) return;
-        const rowOf=(w)=>U.pw.players[p.g].w[String(w)]||[];
-        const avg=(set,fn)=>set.reduce((a,w)=>a+fn(rowOf(w)),0)/set.length;
-        const tgtShare=(r)=>{ const tt=r[U.ci['team_tgt']]||0; return tt?100*(r[U.ci['tgt']]||0)/tt:0; };
-        const touches=(r)=>(r[U.ci['tgt']]||0)+(r[U.ci['carry']]||0);
-        const dShare=avg(recent,tgtShare)-avg(prior,tgtShare);
-        const dTouch=avg(recent,touches)-avg(prior,touches);
-        const score=(p.pos==='RB'?dTouch:dShare);
-        if(Math.abs(score)>=3) trend.push({p, dShare, dTouch, score});
-      });
-      trend.sort((a,b)=>b.score-a.score);
-      const tRow=(x,i)=>_laTrendRow(x.p, x.p.pos==='RB'?`${((x.p.carry3+x.p.tgt3)/Math.max(1,x.p.gp3)).toFixed(1)} touches/gm last 3`:`${x.p.share3.toFixed(1)}% tgt share last 3`,
-        _laVerdict(`${x.score>=0?'+':'−'}${Math.abs(x.p.pos==='RB'?x.dTouch:x.dShare).toFixed(1)}${x.p.pos==='RB'?'':'%'}`, x.p.pos==='RB'?'touches vs prior 3':'share vs prior 3', x.score>=0?'la-trnd-up':'la-trnd-dn')+mineMark(_laDisplayName(x.p,x.p.id),x.p.pos),
+      const T=_laRoleTrends(U, weeksAll, keeps);
+      const span=(ws)=>ws.length>1?`wks ${ws[0]}–${ws[ws.length-1]}`:`wk ${ws[0]}`;
+      const recL=span(T.recentW), priL=span(T.priorW);
+      const fmt=(x,v)=> x.p.pos==='RB' ? v.toFixed(1) : `${v.toFixed(1)}%`;
+      const tRow=(x,i)=>_laTrendRow(x.p,
+        `${fmt(x,x.prior)} → <b>${fmt(x,x.recent)}</b> ${x.p.pos==='RB'?'touches/gm':'tgt share'}${x.missedPrior?` · missed ${x.missedPrior} of ${x.priorGames} prior`:''}${x.missedRecent?` · missed ${x.missedRecent} of ${x.recentGames} recent`:''}`,
+        _laVerdict(`${x.score>=0?'+':'−'}${Math.abs(x.score).toFixed(1)}${x.p.pos==='RB'?'':'%'}`, `${x.p.pos==='RB'?'touches/gm':'tgt share'} · ${recL} vs ${priL}`, x.score>=0?'la-trnd-up':'la-trnd-dn')+mineMark(_laDisplayName(x.p,x.p.id),x.p.pos),
         x.score>=0?'pace-ahead':'pace-behind', i+1);
-      body=two(`TRENDING · LAST ${R>1?R+' WEEKS':'WEEK'} VS THE ${P>1?P+' BEFORE':'ONE BEFORE'}`,'role changes show up here first',
-        '▲ TRENDING UP',trend.filter(x=>x.score>0).slice(0,12).map(tRow).join(''),
-        '▼ TRENDING DOWN',trend.filter(x=>x.score<0).reverse().slice(0,12).map(tRow).join(''))
+      // The words live behind the ⓘ: how the board is measured, and who was held out and why.
+      // The bar keeps one short line and a count.
+      _laTrendInfo={T, recL, priL};
+      const nHeld=T.heldInjured.length+T.heldAbsent.length+T.heldReturn.length;
+      const sub=`tgt share (WR/TE) · touches/gm (RB)${nHeld?` · ${nHeld} held out`:''} ${(typeof tcInfoBtn==='function')?tcInfoBtn('la_role_trends','How role trends are measured, and who was held out'):''}`;
+      body=two(`ROLE TRENDS · ${recL.toUpperCase()} VS ${priL.toUpperCase()}`, sub,
+          '▲ TRENDING UP · role growing',T.up.slice(0,12).map(tRow).join(''),
+          '▼ TRENDING DOWN · role shrinking',T.down.slice(0,12).map(tRow).join(''))
         + sleeperBoard;
     }
   }
   return `${bar}${body}<div class="la-note">★ = on your roster · tap a name for the player card</div>`;
 }
 
+// The Trending board's ⓘ: the method, then the names held out of the current board.
+var _laTrendInfo=null;
+TC_INFO_BOOK.la_role_trends={title:'Role trends', body:()=>{
+  const i=_laTrendInfo; const T=i&&i.T;
+  const nm=(x)=>escHtml(_laDisplayName(x.p,x.p.id));
+  const list=(arr,fmt)=>arr.length?`<div class="tc-info-list">${arr.map(fmt).join(', ')}</div>`:'';
+  return `<p>Who is getting more of the ball, and who less. For a WR or TE it is his <b>share of his team’s targets</b>; for an RB it is his <b>touches per game</b> (carries + targets).${i?` The last window (<b>${escHtml(i.recL)}</b>) is set against the one before it (<b>${escHtml(i.priL)}</b>)`:' Two completed weeks compare the latest against the one before; from four, the last three against the three before'}; the window grows with the season and uses only weeks every team has finished.</p>
+    <p>A bye week is left out of both windows. A game the team played and the player did not shows up as a game with zero usage, so a backup stepping into a role has a real zero behind him. Shares are pooled over the window’s games (targets ÷ team targets), not averaged week by week. A riser has to be at 10% of the targets or 7 touches a game now; a faller has to have been there before. Moves under 3 points do not make the board.</p>
+    <p><b>Held out</b>, because a trend that stopped at the training room predicts nothing: players on IR, OUT, PUP or suspended; players who missed every game of the recent window (an absence, not a drop); and players who missed every game of the prior window (a return, not a rise).</p>
+    ${T&&T.heldInjured.length?`<p class="tc-info-sub"><b>Injured (${T.heldInjured.length})</b></p>${list(T.heldInjured,(x)=>`${nm(x)} <span class="muted">${escHtml(x.code)}</span>`)}`:''}
+    ${T&&T.heldAbsent.length?`<p class="tc-info-sub"><b>Missed every recent game (${T.heldAbsent.length})</b></p>${list(T.heldAbsent,nm)}`:''}
+    ${T&&T.heldReturn.length?`<p class="tc-info-sub"><b>Back from missing every prior game (${T.heldReturn.length})</b></p>${list(T.heldReturn,nm)}`:''}
+    <p class="tc-info-sub">Source: nflverse weekly usage (the in-season sidecar) · injury designations from Sleeper.</p>`;
+}};
+// The weeks the in-season sidecar carries, from the players' own rows (TC_INSEASON.weeks
+// says the same when it is kept up; the union of rows is the truth either way).
+// A week counts only once it is complete: the nightly build lands a Thursday game's rows
+// on Friday, and a trend window that took that week would read two teams' games against
+// everyone else's nothing. A week with rows from fewer than 70% of the teams the sidecar
+// knows (a bye week sits at 26–30 of 32; a Thursday night alone at 2) is still being played.
+function _laSidecarWeeks(U){
+  const teams=new Map(), all=new Set();
+  U.players.forEach(p=>{ const t=String(p.team||'').toUpperCase(); all.add(t); p.weeks.forEach(x=>{ const w=Number(x); if(!(w>0)) return; if(!teams.has(w)) teams.set(w,new Set()); teams.get(w).add(t); }); });
+  const need=Math.max(2, Math.ceil(0.7*all.size));
+  return [...teams.keys()].filter(w=>teams.get(w).size>=need).sort((a,b)=>a-b);
+}
+// Role trends, the math behind the Trending board. Two completed weeks compare the latest
+// against the one before; from four, the last three against the three before. For every
+// WR, TE and RB the recent window's usage is set against the prior window's — share of the
+// team's targets for a receiver, touches per game for a back — pooled over the games in
+// each window (sum of targets over sum of team targets, not an average of weekly shares,
+// so a 2-target week in a 20-target game does not count like a 2-target week in a 40).
+//
+// A week the team did not play (bye) is left out of both windows. A week the team played
+// and the player has no row for counts as a game with zero usage: a backup stepping into a
+// role has a real zero behind him. Two kinds of player are held out and named under the
+// board rather than ranked: anyone on IR, OUT, PUP or suspended — a trend that stopped at
+// the training room predicts nothing — and anyone who missed every game of the recent
+// window, whose "drop" is an absence, not a role — and, the mirror, anyone who missed every
+// game of the prior window, whose "rise" is a return. A player who missed games inside a
+// window is kept and says so in his line. The held-out are named only when they had, or
+// now have, a role worth the floor; a fringe player's absence is nobody's news. Relevance floors keep the noise off: a riser must be at
+// 10% of the targets or 7 touches a game now, a faller must have been there before.
+const LA_TREND_MIN_DELTA=3, LA_TREND_MIN_SHARE=10, LA_TREND_MIN_TOUCH=7;
+function _laRoleTrends(U, weeksAll, keeps){
+  const n=weeksAll.length;
+  const R=Math.min(3, Math.max(1, Math.floor(n/2))), P=R;
+  const recentW=weeksAll.slice(-R), priorW=weeksAll.slice(0,-R).slice(-P);
+  // which teams played which weeks, and each team's targets per week (from any teammate's row);
+  // the sidecar spells the Rams both ways (LA from nflverse, LAR elsewhere), so team keys are
+  // normalised or a Ram's teammates would not count as his team
+  const tm=(t)=>{ const x=String(t||'').toUpperCase(); return x==='LA'?'LAR':x; };
+  const played=new Set(), teamTgt=new Map();
+  U.players.forEach(p=>{ p.weeks.forEach(w=>{ const r=U.pw.players[p.g].w[String(w)]||[]; const k=tm(p.team)+'|'+w; played.add(k);
+    const tt=r[U.ci['team_tgt']]||0; if(tt>(teamTgt.get(k)||0)) teamTgt.set(k, tt); }); });
+  const up=[], down=[], heldInjured=[], heldAbsent=[], heldReturn=[];
+  U.players.forEach(p=>{
+    if(!/^(WR|TE|RB)$/.test(p.pos)) return;
+    if(!keeps(_laDisplayName(p,p.id),p.pos)) return;
+    const games=(ws)=>ws.filter(w=>played.has(tm(p.team)+'|'+w));
+    const rec=games(recentW), pri=games(priorW);
+    if(!rec.length || !pri.length) return;
+    const rowOf=(w)=>U.pw.players[p.g].w[String(w)]||null;
+    const usage=(ws)=>{ let tg=0,tt=0,touch=0,miss=0; ws.forEach(w=>{ const r=rowOf(w); if(!r){ miss++; } else { tg+=r[U.ci['tgt']]||0; touch+=(r[U.ci['tgt']]||0)+(r[U.ci['carry']]||0); } tt+=teamTgt.get(tm(p.team)+'|'+w)||0; });
+      return {share: tt?100*tg/tt:0, touches: touch/ws.length, miss}; };
+    const a=usage(pri), b=usage(rec);
+    // the Sleeper id the row renderer resolves (gsis map first, then the name), so the
+    // designation check sees the same player the IR tag is drawn for
+    const pid=p.id || laPidFromName(_laDisplayName(p,null), p.pos);
+    const inj=(typeof tcInjuryInfo==='function')?tcInjuryInfo(pid):null;
+    const code=inj && inj.code;
+    const isRB=p.pos==='RB';
+    const prior=isRB?a.touches:a.share, recent=isRB?b.touches:b.share;
+    const floor=isRB?LA_TREND_MIN_TOUCH:LA_TREND_MIN_SHARE;
+    if(code && /^(IR|OUT|PUP|SUS)$/.test(code)){ if(prior>=floor||recent>=floor) heldInjured.push({p, code}); return; }
+    // absent every recent game: an absence, not a role (named only when he had a role to lose);
+    // absent every prior game: a return, not a rise
+    if(b.miss===rec.length){ if(prior>=floor) heldAbsent.push({p}); return; }
+    if(a.miss===pri.length){ if(recent>=floor) heldReturn.push({p}); return; }
+    const score=recent-prior;
+    if(Math.abs(score)<LA_TREND_MIN_DELTA) return;
+    const row={p, prior, recent, score, missedPrior:a.miss, priorGames:pri.length, missedRecent:b.miss, recentGames:rec.length};
+    if(score>0 && recent>=floor) up.push(row);
+    else if(score<0 && prior>=floor) down.push(row);
+  });
+  up.sort((a,b)=>b.score-a.score); down.sort((a,b)=>a.score-b.score);
+  return {recentW, priorW, up, down, heldInjured, heldAbsent, heldReturn};
+}
 // ── Week-1 trends: this week's breakouts, and Sleeper's own trending feed ────────────
 // Week 1 has no "before" to trend against, but it has the games: a starter's usage this
 // week against the projection that kicked off the season IS the first trend. From week 2
@@ -1425,7 +1508,7 @@ function _laWeekBreakoutsHTML(U, wk, keeps, mineMark){
               : _laVerdict(`${x.car}`, 'carries', 'la-trnd-up')+mineMark(_laDisplayName(x.p,x.p.id),x.p.pos),
     x.d!=null&&x.d>=0.15?'pace-ahead':x.d!=null&&x.d<=-0.15?'pace-behind':'', i+1);
   const two=(title,sub,upLbl,upRows,dnLbl,dnRows)=>`
-    <div class="la-ins-bar"><span class="la-ins-lbl">${title}</span><span class="la-ins-sub">${sub}</span></div>
+    <div class="la-ins-bar la-trnd-barhd"><span class="la-ins-lbl la-trnd-lbl">${title}</span><span class="la-ins-sub">${sub}</span></div>
     <div class="card la-trnd-card"><div class="la-trnd-cols">
       <div><div class="la-trnd-h la-trnd-up">${upLbl}</div>${upRows||'<div class="la-ins-sub">nobody in this scope yet</div>'}</div>
       <div><div class="la-trnd-h la-trnd-dn">${dnLbl}</div>${dnRows||'<div class="la-ins-sub">nobody in this scope yet</div>'}</div>
@@ -1506,7 +1589,7 @@ function _laOlForm(win){
 // The Trends pane's two-column board, as a shared helper (the O-Line pane draws the same card).
 function _laTwoCols(title,sub,upLbl,upRows,dnLbl,dnRows){
   return `
-    <div class="la-ins-bar"><span class="la-ins-lbl">${title}</span><span class="la-ins-sub">${sub}</span></div>
+    <div class="la-ins-bar la-trnd-barhd"><span class="la-ins-lbl la-trnd-lbl">${title}</span><span class="la-ins-sub">${sub}</span></div>
     <div class="card la-trnd-card"><div class="la-trnd-cols">
       <div><div class="la-trnd-h la-trnd-up">${upLbl}</div>${upRows||'<div class="la-ins-sub">nobody in this scope yet</div>'}</div>
       <div><div class="la-trnd-h la-trnd-dn">${dnLbl}</div>${dnRows||'<div class="la-ins-sub">nobody in this scope yet</div>'}</div>
