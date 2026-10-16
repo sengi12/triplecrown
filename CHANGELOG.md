@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-15
 
+- fix(game-center): punts and kickoffs hang higher on the drive chart — the arc's peak clears the field's top edge and stays under the yard numbers; a throw is unchanged (#189)
 - fix(team): the week rail's schedule is fetched fresh each load (force-cache had frozen a pre-score copy on desktop, hiding every W and L), the results are bare green W / red L letters instead of circle badges, and the phone's card folds to the slider until a tap opens the game chips (#188)
 - fix(team): every played game on the week rail wears its W or L — green and red badges on the logos and the phone chips before anything is tapped; a pick still rings its game and dims the rest (#187)
 - feat(card): tap the contract band on a player card and it opens the deal year by year — base, bonuses, cap hit with its share, dead cap, cut savings — with the season in progress lit, void years marked and a POTENTIAL OUT divider before the first year a cut saves cap; the builder follows OverTheCap's player links for the table, cached per deal (#185)

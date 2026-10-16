@@ -1051,8 +1051,10 @@ function gcDriveChartHTML(game, sum){
       // the kick flies from the snap to where it was fielded (always), then a return runs back
       // the other way only when the returner actually gained ground
       big=true;
-      // a punt hangs high: the arc rises with the distance, well above a throw's
-      const xLand=X(punt.landYd), kickSeg=Object.assign(quad(x0,xLand,Math.min(58, Math.max(36, Math.abs(xLand-x0)*0.32))), {cls:' gc-seg-kick'});
+      // a punt hangs high: the arc rises with the distance, and its peak (half the control
+      // point's lift) clears the field's top edge but stays under the yard numbers — a throw's
+      // peak stays inside the field
+      const xLand=X(punt.landYd), kickSeg=Object.assign(quad(x0,xLand,Math.min(90, Math.max(72, Math.abs(xLand-x0)*0.55))), {cls:' gc-seg-kick'});
       const returned=(punt.outcome==='return'||punt.outcome==='returnTd'||punt.outcome==='fumbleLost') && punt.returnYds>0;
       endX=X(punt.endYd);
       if(returned){ pre=kickSeg; fin=Object.assign(line(xLand,endX), {cls:' gc-seg-ret'}); retCol='#39c15a'; }
@@ -1065,7 +1067,7 @@ function gcDriveChartHTML(game, sum){
       // the kick flies from the kicking spot down to where it was fielded, then the return the
       // other way — the receiving team's own advance (green), only drawn when it gained ground
       big=true;
-      const xLand=X(koData.landYd), kickSeg=Object.assign(quad(x0,xLand,Math.min(48, Math.max(30, Math.abs(xLand-x0)*0.26))), {cls:' gc-seg-kick'});
+      const xLand=X(koData.landYd), kickSeg=Object.assign(quad(x0,xLand,Math.min(82, Math.max(66, Math.abs(xLand-x0)*0.46))), {cls:' gc-seg-kick'});   // high like a punt, a little under
       const returned=(koData.outcome==='return'||koData.outcome==='returnTd'||koData.outcome==='fumbleLost') && koData.returnYds>0;
       endX=X(koData.endYd);
       if(returned){ pre=kickSeg; fin=Object.assign(line(xLand,endX), {cls:' gc-seg-ret'}); retCol='#39c15a'; }

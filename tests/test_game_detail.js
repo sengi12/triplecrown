@@ -459,12 +459,19 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const flipD=toD([P('f1',1,'Rush','K.Williams up the middle to CIN 13 for 3 yards.',3,90),
     P('f2',2,'Punt','E.Evans punts 62 yards to BUF 25, Center-J.Cardona. G.Dortch pushed ob at BUF 39 for 14 yards (D.Connors; T.Higbee).',62,13,{start:{down:4, distance:4, yardsToEndzone:13, possessionText:'CIN 13', shortDownDistanceText:'4th & 4'}})], 'PUNT');
   const fpH=app.drive(app.GAME("post"), flipD);
-  const kick=/gc-seg-kick" d="M([\d.]+),([\d.]+) Q([\d.]+),([\d.]+) ([\d.]+),([\d.]+)"/.exec(fpH);
+  const kick=/gc-seg-kick" d="M([\d.]+),([\d.]+) Q([\d.]+),(-?[\d.]+) ([\d.]+),([\d.]+)"/.exec(fpH);   // the control point sits above the SVG's top edge now, a negative y
   const ret=/gc-seg-last gc-seg-ret" d="M([\d.]+),[\d.]+ L([\d.]+),/.exec(fpH);
   // CIN is the home side here, driving right → left: the snap sits at its own 13 on the right
   chk(kick && Number(kick[1])>230 && Number(kick[5])<Number(kick[1])-100, `the snap sits at the kicking club's own 13 whatever yardsToEndzone says, and the kick flies downfield from there (x ${kick&&kick[1]} → ${kick&&kick[5]})`);
   chk(ret && Number(ret[2])>Number(ret[1]) && Math.abs(Number(ret[1])-Number(kick[5]))<0.2, 'the return starts where the ball was fielded and runs back the other way');
-  chk(kick && Number(kick[4])<=31, `a punt hangs high: the arc's control point well above a throw's (y ${kick&&kick[4]}, a pass tops out at 43)`);
+  // the arc's peak sits halfway between the lane (y 67) and the control point: a control at
+  // y -5 or above puts the peak at y 31 or higher, clear of the field's top edge (y 34) and
+  // under the yard numbers (y ~17)
+  chk(kick && Number(kick[4])<=-5, `a punt hangs high: the arc's peak clears the field's top edge (control y ${kick&&kick[4]}, a pass's control tops out at 43)`);
+  const koArcD=toD([P('k1',1,'Kickoff','T.Bass kicks 61 years from BUF 35 to CIN 4. J.Whittington to CIN 29 for 25 yards (M.Hoecht).'.replace('years','yards'),25,96,{start:{down:0, distance:0, yardsToEndzone:96, possessionText:'CIN 4', shortDownDistanceText:''}})], 'TD');
+  const koArcH=app.drive(app.GAME('post'), koArcD);
+  const kkick=/gc-seg-kick" d="M([\d.]+),([\d.]+) Q([\d.]+),(-?[\d.]+) ([\d.]+),([\d.]+)"/.exec(koArcH);
+  chk(kkick && Number(kkick[4])<=1 && Number(kkick[4])>Number(kick[4])-40, `a kickoff hangs high too, a little under a punt (control y ${kkick&&kkick[4]})`);
   const prog=/gc-seg-prog" d="M([\d.]+),[\d.]+ L([\d.]+),/.exec(fpH);
   chk(prog && Math.abs(Number(prog[2])-Number(kick[1]))<0.2, 'the drive line ends at the real snap, not across the field');
 
