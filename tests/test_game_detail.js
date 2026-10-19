@@ -49,7 +49,7 @@ const app=new Function('IDS','SUM', code+`
         if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
         return prev(url); }; },
     sideClass:gcSideClass, setWeekNum:(w)=>{ _gc.week=w; _gc._mu=null; }, liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
-    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, stubContent:(fn)=>{ renderContent=fn; }, setLiveView:(v)=>{ currentProjViewMode=()=>v?'live':'proj'; }, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, punt:gcPuntRead, pen:gcPenaltyRead, kickoff:gcKickoffRead, logo:NFL_LOGO, esc:escAttr, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, wpInfo:gcWinProbInfo, wpIdx:(eid)=>_gcd.wpPts[eid], wpJump:gcWinProbJump, replayState:()=>_gcd.replay, clearReplay:()=>{ _gcd.replay=null; }, driveInView:gcDriveInView, wpPick:(eid,i)=>{ _gcd.wpPick=_gcd.wpPick||{}; if(i==null) delete _gcd.wpPick[eid]; else _gcd.wpPick[eid]=i; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
+    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, stubContent:(fn)=>{ renderContent=fn; }, setLiveView:(v)=>{ currentProjViewMode=()=>v?'live':'proj'; }, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, punt:gcPuntRead, pen:gcPenaltyRead, kickoff:gcKickoffRead, logo:NFL_LOGO, esc:escAttr, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, wpInfo:gcWinProbInfo, wpIdx:(eid)=>_gcd.wpPts[eid], wpJump:gcWinProbJump, replayState:()=>_gcd.replay, clearReplay:()=>{ _gcd.replay=null; }, driveInView:gcDriveInView, wpPick:(eid,i)=>{ _gcd.wpPick=_gcd.wpPick||{}; if(i==null) delete _gcd.wpPick[eid]; else _gcd.wpPick[eid]=i; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, scrolled:gcFeedScrolled, watch:gcFeedWatchScroll, condensed:()=>({on:!!_gcd.condensed, short:!!_gcd.condensedShort}), setCondensed:(v)=>{ _gcd.condensed=v; _gcd.condensedShort=false; }, replayPlay:gcReplayPlay, countPaints:(fn)=>{ renderRightSidebar=fn; }, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -644,6 +644,29 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   app.setSum('401872925', SUM); app.setTab('feed');
   const ghFeed=app.gameHTML(app.GAME('post'));
   chk(/class="gc-feedview"/.test(ghFeed) && /gc-feedview-head/.test(ghFeed) && /gc-feedview-feed/.test(ghFeed) && ghFeed.indexOf('gc-drive-svg')<ghFeed.indexOf('gc-feedview-feed') && ghFeed.indexOf('gc-feedview-head')<ghFeed.indexOf('gcf'), 'the feed tab pins the hero + field + tabs in a head, and the plays scroll in their own window below');
+  console.log('=== the pinned block condenses while the plays scroll; a tapped play paints at once ===');
+  chk(/<div class="gc-feedview-feed" onscroll="gcFeedScrolled\(this\)">/.test(ghFeed) && !/gc-condensed/.test(ghFeed), 'the plays\' window reports its scroll; nothing condensed at the top');
+  const fvStub={cls:new Set(), classList:{toggle(c,v){ if(v) fvStub.cls.add(c); else fvStub.cls.delete(c); }, remove(c){ fvStub.cls.delete(c); }, add(c){ fvStub.cls.add(c); }}};
+  const feedStub=(y)=>({scrollTop:y, closest:()=>fvStub});
+  app.scrolled(feedStub(60));
+  chk(app.condensed().on && fvStub.cls.has('gc-condensed'), 'scrolled 60px into the plays: the block condenses, in place, without a repaint');
+  chk(/class="gc-feedview gc-condensed"/.test(app.gameHTML(app.GAME('post'))), 'a repaint keeps it condensed');
+  app.scrolled(feedStub(2));
+  chk(!app.condensed().on && !fvStub.cls.has('gc-condensed'), 'scrolled back to the top: it opens up again');
+  // the phone: the page scrolls and the block is sticky — the feed view's top passing the window's top is the signal
+  app.setCondensed(false);
+  const fvPhone={top:0, classList:{toggle(c,v){ fvStub.cls[v?'add':'delete'](c); }, remove(c){ fvStub.cls.delete(c); }, add(c){ fvStub.cls.add(c); }}, getBoundingClientRect(){ return {top:fvPhone.top}; }, querySelector(){ return null; }};
+  const qsOld=document.querySelector; document.querySelector=(q)=>q==='.gc-feedview'?fvPhone:qsOld(q);
+  fvPhone.top=-120; app.watch(global.window);
+  chk(app.condensed().on, 'the phone page scrolled 120px past the block’s top: condensed');
+  fvPhone.top=0; app.watch(global.window);
+  chk(!app.condensed().on, 'scrolled back up: open');
+  document.querySelector=qsOld;
+  app.setCondensed(false);
+  let paints=0; app.countPaints(()=>{ paints++; }); app.setDown(true);
+  app.replayPlay('401872925', mini.drives.previous[0].plays[0].id);
+  chk(paints===1 && app.replayState() && app.replayState().playId===String(mini.drives.previous[0].plays[0].id), 'a tapped play paints at once, even under a finger (the idle gate used to hold it until the tap ended)');
+  app.setDown(false); app.clearReplay();
   app.setTab(null);
 
   const posts=[...dc.matchAll(/<g class="gc-posts"><path d="M([\d.]+),([\d.]+) V([\d.]+) M([\d.]+),([\d.]+) L([\d.]+),([\d.]+) M[\d.]+,[\d.]+ V[\d.]+ M[\d.]+,[\d.]+ V[\d.]+"/g)].map(m=>m.slice(1).map(Number));
