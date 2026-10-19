@@ -49,7 +49,7 @@ const app=new Function('IDS','SUM', code+`
         if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
         return prev(url); }; },
     sideClass:gcSideClass, setWeekNum:(w)=>{ _gc.week=w; _gc._mu=null; }, liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
-    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, stubContent:(fn)=>{ renderContent=fn; }, setLiveView:(v)=>{ currentProjViewMode=()=>v?'live':'proj'; }, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, punt:gcPuntRead, pen:gcPenaltyRead, kickoff:gcKickoffRead, logo:NFL_LOGO, esc:escAttr, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
+    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, stubContent:(fn)=>{ renderContent=fn; }, setLiveView:(v)=>{ currentProjViewMode=()=>v?'live':'proj'; }, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, punt:gcPuntRead, pen:gcPenaltyRead, kickoff:gcKickoffRead, logo:NFL_LOGO, esc:escAttr, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, wpInfo:gcWinProbInfo, wpIdx:(eid)=>_gcd.wpPts[eid], wpPick:(eid,i)=>{ _gcd.wpPick=_gcd.wpPick||{}; if(i==null) delete _gcd.wpPick[eid]; else _gcd.wpPick[eid]=i; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -657,6 +657,23 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(/<svg/.test(w1) && cy>40 && /aria-expanded="true"/.test(w1) && (w1.match(/<image /g)||[]).length===2, 'open: the chart with both clubs\' marks on the axis, and the line ends near the bottom — the home side, who is winning');
   const hc=(typeof pwTeamColor==='function')?'':'';
   chk(/,8 L[\d.]+,8 Z" fill="#/.test(w1) && !/,64 L[\d.]+,64 Z" fill="#/.test(w1) && /x="338"/.test(w1), 'the winner\'s share is filled in the winner\'s colour (the home side wins here: from the line up to the top), the clubs\' marks on the right');
+  console.log('=== a tap on the line names the play ===');
+  chk(/<rect class="gc-wp-hit"[^>]*onpointerdown="gcWinProbTap\(event,'401872925'\)"[^>]*onpointermove="gcWinProbTap\(event,'401872925'\)"/.test(w1) && /tap the line for the play/.test(w1) && !/gc-wp-call/.test(w1), 'the open chart carries a hit area for taps and drags, and no bubble until a point is picked');
+  const ix=app.wpIdx('401872925');
+  const k=ix.pts.findIndex(p=>ix.plays[p.pid]);
+  chk(ix && ix.pts.length===15 && k>=0, `every point is indexed by its playId; ${ix.pts.filter(p=>ix.plays[p.pid]).length} of ${ix.pts.length} match a play in the (trimmed) fixture`);
+  const inf=app.wpInfo('401872925', k);
+  chk(inf && inf.hasPlay && inf.title && inf.q>=1 && /^\d+:\d\d$/.test(inf.clock) && inf.pct>=50 && inf.pct<=100 && (inf.side==='CIN'||inf.side==='TB'), `a point reads as the play behind it: Q${inf&&inf.q} ${inf&&inf.clock} · ${inf&&inf.title} · ${inf&&inf.side} ${inf&&inf.pct}%`);
+  const inf0=app.wpInfo('401872925', 0);
+  chk(inf0 && inf0.delta===0 && inf0.pct===62 && inf0.side==='CIN', 'the first point has no move (62% CIN at kickoff)');
+  const inf1=app.wpInfo('401872925', 1);
+  chk(inf1 && inf1.pct===53 && inf1.delta===-9, 'the second point: CIN 53%, a 9-point move against them');
+  chk(app.wpInfo('401872925', 99)===null && app.wpInfo('nope', 0)===null, 'no such point, no such game: null');
+  app.wpPick('401872925', k);
+  const w2=app.wp(app.GAME('post'), SUM);
+  chk(/<g class="gc-wp-mark"><line/.test(w2) && /<div class="gc-wp-call[^"]*" style="left:[\d.]+%"/.test(w2) && w2.indexOf(app.esc(inf.title).slice(0,20))>0 && new RegExp(`<b>${inf.pct}%</b>`).test(w2), 'with a point picked the chart repaints with the marker on the point and the bubble naming the play, the score and the chance');
+  app.wpPick('401872925', null);
+  chk(!/gc-wp-call/.test(app.wp(app.GAME('post'), SUM)), 'closing the bubble clears the marker too');
   app.wpOpen(false);
   const lp1=app.lastPlay(Object.assign(app.GAME('in'), {sit:{period:4, clock:'2:50', lastPlayId:'z', lastPlay:{id:'z', type:'Extra Point Good', text:'E.McPherson extra point is GOOD.', yds:0, team:'CIN', athletes:[], down:0, ddt:'', spot:'', yte:null}}}), SUM);
   chk(/LAST PLAY/.test(lp1) && /End zone/.test(lp1) && /E\. McPherson XP, good/.test(lp1) && /tc-fresh/.test(lp1), 'the last-play line: LIVE, the spot, the play, the stamp');

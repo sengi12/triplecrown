@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-19
 
+- feat(game-center): tap or drag the win probability line and a bubble names the play behind that point — quarter and clock, the score as it stood, the play, the favoured side's chance and the move from the play before (#193)
 - feat(team): one week filter for the whole team view — a picked game survives the walk from Passing to Receiving to Adv Metrics, the Adv Metrics card is the projections card (W/L rail, taps, chips, fold) on the same shared pick, the league-wide Advanced page picks by week number and the Power Score follows; one builder and one class draw every week slider (#192)
 
 ## 2026-10-16
