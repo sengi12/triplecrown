@@ -1265,7 +1265,6 @@ tr.rank-starred:hover{background:rgba(210,153,34,.12);}
   .adv-power-label{font-size:12px;}
   .adv-power-desc{font-size:10px;}
 }
-.adv-week-range-card{margin-top:-4px;margin-bottom:12px;}
 .sr-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;}
 .sr-card{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:13px 15px;}
 .sr-card-title{font-size:12.5px;font-weight:800;color:var(--accent);margin-bottom:10px;
@@ -3024,6 +3023,12 @@ html,body{max-width:100%;overflow-x:hidden;}
 .wr-week-top .wr-week-stem{top:18px;height:5px;}
 .wr-week-bottom .wr-week-stem{top:-5px;height:5px;}
 .wr-week-num{font-size:10px;color:var(--text);font-weight:800;}
+/* the league-wide card's week numbers are its picker: the same ring, the same dimming */
+.wr-week-cell.wr-pickable{pointer-events:auto;cursor:pointer;border-radius:8px;padding:1px 4px;}
+.wr-week-cell.wr-pickable:hover{background:rgba(255,255,255,.06);}
+.wr-week-cell.wr-dim{opacity:.45;}
+.wr-week-cell.wr-picked{--pick:var(--accent);box-shadow:0 0 0 2px var(--pick);background:color-mix(in srgb,var(--pick) 18%,transparent);opacity:1;}
+.wr-week-cell.wr-picked .wr-week-num{color:var(--accent);}
 
 /* ── Roster tracker (pinned bottom bar + expandable panel) ── */
 .rt-bar-host{position:fixed;left:0;right:0;bottom:0;z-index:900;pointer-events:none;
@@ -6796,6 +6801,20 @@ function setSharedWeekRange(team, season, lo, hi){
   _sharedWeekRangeByTeam[key] = [Math.min(a,b), Math.max(a,b)];
   return _sharedWeekRangeByTeam[key];
 }
+// The picked games ride beside the range, under the same key, so a pick made on the
+// Passing tab is the pick the Receiving tab, the Adv Metrics card and the Power Score see.
+// The league-wide card picks under its own key (ADV_LEAGUE_RANGE_KEY), season by season.
+let _sharedWeekPicksByTeam = {};  // `${season}:${TEAM}` -> [wk, ...] sorted
+function getSharedWeekPicks(team, season){
+  const v=_sharedWeekPicksByTeam[_sharedWeekRangeKey(team, season)];
+  return (Array.isArray(v) && v.length) ? v.slice() : null;
+}
+function setSharedWeekPicks(team, season, weeks){
+  const key=_sharedWeekRangeKey(team, season);
+  const arr=Array.isArray(weeks) ? [...new Set(weeks.map(Number).filter(w=>w>=1 && w<=18))].sort((a,b)=>a-b) : [];
+  if(arr.length) _sharedWeekPicksByTeam[key]=arr; else delete _sharedWeekPicksByTeam[key];
+  return arr.length ? arr : null;
+}
 
 // ── Weekly schedule lookup for slider opponent rails ───────────────────────
 // Runtime-only (no seed change): fetch nflverse schedule CSV once per season and build
@@ -6910,11 +6929,11 @@ function renderWeekOpponentRail(team, season, className=''){
   const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(s):18;
   const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(s, tm):maxWk;
   const span=Math.max(1,maxWk-1);
-  // The projections page's rail is a picker: a played game is a tap, a picked one wears its
-  // result — green W, red L — and the rest dim while a pick is on. The Adv Metrics rail
-  // keeps its own week range and stays a label.
-  const pickable = className==='wr-opp-main';
-  const picks = pickable ? weekPicks(tm) : null;
+  // The rail is a picker on the projections page and on the Adv Metrics card alike: a played
+  // game is a tap, every scored game wears its result — green W, red L — and the rest dim
+  // while a pick is on. The pick is shared, so both cards show the same one.
+  const pickable = className==='wr-opp-main' || className==='wr-opp-adv';
+  const picks = pickable ? weekPicks(tm, s) : null;
   for(let wk=1; wk<=maxWk; wk++){
     const m=byWeek[wk];
     const ratio=((wk-1)/span).toFixed(6);
@@ -6933,7 +6952,7 @@ function renderWeekOpponentRail(team, season, className=''){
     // Every played game wears its result — green W, red L — picked or not; a pick adds the
     // ring and dims the rest, so the record reads at a glance and the pick still stands out.
     const pickCls = canPick ? ' wr-pickable' + (on ? ' wr-picked' : (picks && picks.size ? ' wr-dim' : '')) + (m.res ? ` wr-res-${m.res}` : '') : '';
-    const tap = canPick ? ` role="button" tabindex="0" onclick="weekPickToggle('${tm}',${wk},event)" onkeydown="if(event.key==='Enter'||event.key===' '){weekPickToggle('${tm}',${wk},event);}"` : '';
+    const tap = canPick ? ` role="button" tabindex="0" onclick="weekPickToggle('${tm}',${wk},event,'${s}')" onkeydown="if(event.key==='Enter'||event.key===' '){weekPickToggle('${tm}',${wk},event,'${s}');}"` : '';
     cells.push(`<div class="wr-opp-cell${laneCls}${pickCls}" style="left:${pos}" title="Week ${wk}: ${ha} ${opp}${score}${canPick?(on?' · tap to drop':' · tap to filter to this game'):''}"${tap}>
       <span class="wr-opp-stem"></span>
       <span class="wr-opp-ico">${logo?`<img src="${logo}" class="wr-opp-logo" alt="${opp}" onerror="this.style.display='none'">`:`<span class="wr-opp-fallback">${opp}</span>`}${(canPick && m.res)?`<span class="wr-res wr-res-badge" aria-label="${m.res==='W'?'Win':m.res==='L'?'Loss':'Tie'}">${m.res}</span>`:''}</span>
@@ -6945,26 +6964,49 @@ function renderWeekOpponentRail(team, season, className=''){
 // Click a game on the rail (or its chip on a phone) and the page filters to that week; click
 // more to add them; click anywhere off the card to clear. The picks ride the same filtered
 // data the span slider builds, through a set of weeks instead of a range.
-function weekPicks(team){
-  const st=(typeof userProj!=='undefined' && userProj) ? userProj[String(team||'').toUpperCase()] : null;
+// The picks for a team (or the league key) in a season: the shared store first, else the
+// projections state of the season on screen (which is also what the store mirrors into).
+function weekPicks(team, season){
+  const tm=String(team||'').toUpperCase();
+  const s=String(season==null ? (typeof activeSeason!=='undefined' ? activeSeason : '') : season);
+  const shared=getSharedWeekPicks(tm, s);
+  if(shared) return new Set(shared);
+  const st=(typeof userProj!=='undefined' && userProj && typeof activeSeason!=='undefined' && s===String(activeSeason)) ? userProj[tm] : null;
   return (st && Array.isArray(st.weekPick) && st.weekPick.length) ? new Set(st.weekPick) : new Set();
 }
-function weekPickToggle(team, wk, ev){
-  try{ if(ev && ev.stopPropagation) ev.stopPropagation(); }catch(e){}
-  team=String(team||'').toUpperCase(); wk=Number(wk);
-  const state=(typeof userProj!=='undefined' && userProj) ? userProj[team] : null; if(!state || !wk) return;
-  const set=weekPicks(team);
-  if(set.has(wk)) set.delete(wk); else set.add(wk);
-  if(!set.size){ weekPickClear(team); return; }
-  const weeks=[...set].sort((a,b)=>a-b);
-  state.weekPick=weeks;
-  applyWeekRange(team, weeks[0], weeks[weeks.length-1], set);
+// Does this (team, season) drive the projections view — the one whose filtered data
+// applyWeekRange builds? Anything else (the Adv card on the projection view, the league
+// key, a past season's card) only needs the shared state and a repaint.
+function _weekPickDrivesProj(team, season){
+  return typeof activeSeason!=='undefined' && String(season)===String(activeSeason)
+    && typeof userProj!=='undefined' && !!(userProj && userProj[team]);
 }
-function weekPickClear(team){
+function weekPickToggle(team, wk, ev, season){
+  try{ if(ev && ev.stopPropagation) ev.stopPropagation(); }catch(e){}
+  team=String(team||'').toUpperCase(); wk=Number(wk); if(!team || !wk) return;
+  const s=String(season==null ? (typeof activeSeason!=='undefined' ? activeSeason : '') : season);
+  const set=weekPicks(team, s);
+  if(set.has(wk)) set.delete(wk); else set.add(wk);
+  if(!set.size){ weekPickClear(team, s); return; }
+  const weeks=[...set].sort((a,b)=>a-b);
+  setSharedWeekPicks(team, s, weeks);
+  setSharedWeekRange(team, s, weeks[0], weeks[weeks.length-1]);
+  if(_weekPickDrivesProj(team, s)){
+    userProj[team].weekPick=weeks;
+    applyWeekRange(team, weeks[0], weeks[weeks.length-1], set);
+  } else if(typeof renderContent==='function') renderContent();
+}
+function weekPickClear(team, season){
   team=String(team||'').toUpperCase();
-  const state=(typeof userProj!=='undefined' && userProj) ? userProj[team] : null; if(!state) return;
-  state.weekPick=null;
-  resetWeekRange(team);
+  const s=String(season==null ? (typeof activeSeason!=='undefined' ? activeSeason : '') : season);
+  setSharedWeekPicks(team, s, null);
+  if(_weekPickDrivesProj(team, s)){
+    userProj[team].weekPick=null;
+    resetWeekRange(team);
+  } else {
+    setSharedWeekRange(team, s, 1, 18);
+    if(typeof renderContent==='function') renderContent();
+  }
 }
 // The phone's card is compact — the slider and its rail — until a tap inside it opens the
 // row of game chips; a tap on a thumb, a chip, a game or the reset link is its own thing.
@@ -6977,45 +7019,105 @@ function weekCardTap(ev){
   card.classList.toggle('wr-open', _wrChipsOpen);
   const more=card.querySelector('.wr-more'); if(more) more.textContent=_wrChipsOpen?'hide ▴':'games ▾';
 }
-// A click anywhere off the week card clears the picks — the "click off when you're done".
+// A click on the page's open space clears the picks — the "click off when you're done".
+// A tab, a button, a link, a menu or the sidebar is never "off": the pick has to survive a
+// walk from Passing to Receiving to Adv Metrics, which is the point of sharing it.
+const WR_CLICK_OFF_KEEP='.week-range-card, .wr-chips, .tc-info-pop, #tcInfoPop, button, a, select, input, textarea, label, [role="button"], [role="tab"], [onclick], .tabs, .sub-tabs, .phase-tabs, .sidebar, .topbar, header, nav';
+function weekPickClickOff(e){
+  try{
+    const t=e.target;
+    if(t && t.closest && t.closest(WR_CLICK_OFF_KEEP)) return;
+    const cards=(typeof document!=='undefined' && document.querySelectorAll) ? document.querySelectorAll('.week-range-card[data-wr-team]') : [];
+    let any=false;
+    Array.from(cards).forEach(c=>{
+      const tm=c.getAttribute('data-wr-team'), s=c.getAttribute('data-wr-season');
+      if(tm && s && weekPicks(tm, s).size){ any=true; weekPickClear(tm, s); }
+    });
+    return any;
+  }catch(err){ return false; }
+}
 if(typeof document!=='undefined' && document.addEventListener){
-  document.addEventListener('click', (e)=>{
-    try{
-      const team=(typeof currentTeam!=='undefined') ? String(currentTeam||'').toUpperCase() : '';
-      if(!team || !weekPicks(team).size) return;
-      const t=e.target;
-      if(t && t.closest && t.closest('.week-range-card, .wr-chips, .tc-info-pop, #tcInfoPop')) return;
-      weekPickClear(team);
-    }catch(err){}
-  }, true);
+  document.addEventListener('click', weekPickClickOff, true);
+}
+// ── The week-range card: one builder, one class, for every surface ──────────────
+// The projections tabs, a team's Adv Metrics card and the league-wide Advanced page all
+// draw THIS card. What differs rides in on cfg — the ids the drag handlers update, the
+// handlers themselves, the rail (opponents with their W or L, or the week numbers), and
+// whether a pick is a game or a week. Edit the card here and every slider changes with it.
+//   cfg: {team, season, lo, hi, maxWk, played, active, loading, league, idPrefix,
+//         onDrag(which) -> js, onCommit -> js, onReset -> js, rail -> html, chips: bool}
+function weekRangeCardHTML(cfg){
+  const team=String(cfg.team||'').toUpperCase(), season=String(cfg.season||'');
+  const league=!!cfg.league, px=cfg.idPrefix||'wr';
+  const maxWk=cfg.maxWk||18, played=(cfg.played!=null)?cfg.played:maxWk, span=Math.max(1,maxWk-1);
+  const lo=Math.min(cfg.lo||1, played), hi=Math.min(cfg.hi||maxWk, played);
+  const loPct=(lo-1)/span*100, hiPct=(maxWk-hi)/span*100;
+  const dead = played<maxWk ? `<div class="dual-slider-dead" style="left:${((played-1)/span*100).toFixed(2)}%" title="Weeks ${played+1}–${maxWk}: not played yet"></div>` : '';
+  const picked=[...weekPicks(team, season)].sort((a,b)=>a-b);
+  const open=(typeof _wrChipsOpen!=='undefined' && _wrChipsOpen);
+  const what=league?'week':'game';
+  const help=`drag either end to zoom into a stretch of ${what}s · or tap a ${what} below to filter to it`;
+  const icon=(typeof TC_ICON==='function')?TC_ICON('calendar'):'';
+  return `<div class="week-range-card${open?' wr-open':''}" data-wr-team="${team}" data-wr-season="${season}" onclick="weekCardTap(event)">
+    <div class="week-range-label">
+      <span>${icon} Filter weeks: <b id="${px}-lo-${team}">${lo}</b> – <b id="${px}-hi-${team}">${hi}</b>${played<maxWk?` <span class="week-range-hint">of ${played} played</span>`:''}${cfg.loading?' <span class="week-range-loading">loading…</span>':''}</span>
+      ${cfg.active?`<span class="week-range-reset" onclick="${cfg.onReset}">↺ Reset to full season</span>`:`<span class="week-range-hint week-range-help">${help}</span>`}
+      <span class="wr-more" aria-hidden="true">${open?'hide ▴':`${what}s ▾`}</span>
+    </div>
+    ${picked.length?`<div class="week-range-picked">Picked ${what}${picked.length>1?'s':''}: <b>wk ${picked.join(', ')}</b> · click off to clear</div>`:''}
+    <div class="dual-slider">
+      <div class="dual-slider-track"></div>
+      ${dead}<div class="dual-slider-fill" id="${px}-fill-${team}" style="left:${loPct}%;right:${hiPct}%"></div>
+      <input type="range" min="1" max="${maxWk}" step="1" value="${lo}" class="dual-range dual-range-lo" oninput="${cfg.onDrag('lo')}" onchange="${cfg.onCommit}">
+      <input type="range" min="1" max="${maxWk}" step="1" value="${hi}" class="dual-range dual-range-hi" oninput="${cfg.onDrag('hi')}" onchange="${cfg.onCommit}">
+      ${cfg.rail||''}
+    </div>
+    ${cfg.chips===false?'':weekPickChipsHTML(team, season)}
+  </div>`;
 }
 // The phone's way in: a game is too small a target on the rail, so a row of chips — week,
 // opponent, the result — carries the same taps at thumb size.
 function weekPickChipsHTML(team, season){
-  const tm=String(team||'').toUpperCase(); const byWeek=weekOpponentMap(tm, season);
-  if(!byWeek) return '';
-  const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(season, tm):18;
-  const picks=weekPicks(tm);
+  const tm=String(team||'').toUpperCase(); const s=String(season||'');
+  const league = typeof ADV_LEAGUE_RANGE_KEY!=='undefined' && tm===ADV_LEAGUE_RANGE_KEY;
+  const byWeek=league ? null : weekOpponentMap(tm, s);
+  if(!league && !byWeek) return '';
+  const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(s, league?null:tm):18;
+  const picks=weekPicks(tm, s);
   const chips=[];
   for(let wk=1; wk<=played; wk++){
-    const m=byWeek[wk]; if(!m || !m.opp) continue;
     const on=picks.has(wk);
-    chips.push(`<button type="button" class="wr-chip${on?' wr-picked':''}${m.res?` wr-res-${m.res}`:''}" onclick="weekPickToggle('${tm}',${wk},event)" title="Week ${wk}: ${m.home?'vs':'@'} ${m.opp}${m.res?` · ${m.res} ${m.pf}-${m.pa}`:''}"><b>${wk}</b> ${m.home?'vs':'@'} ${escHtml(String(m.opp))}${m.res?`<span class="wr-res">${m.res}</span>`:''}</button>`);
+    if(league){   // the league-wide card: a week is a week, no opponent to name
+      chips.push(`<button type="button" class="wr-chip${on?' wr-picked':''}" onclick="weekPickToggle('${tm}',${wk},event,'${s}')" title="Week ${wk}"><b>${wk}</b> wk</button>`);
+      continue;
+    }
+    const m=byWeek[wk]; if(!m || !m.opp) continue;
+    chips.push(`<button type="button" class="wr-chip${on?' wr-picked':''}${m.res?` wr-res-${m.res}`:''}" onclick="weekPickToggle('${tm}',${wk},event,'${s}')" title="Week ${wk}: ${m.home?'vs':'@'} ${m.opp}${m.res?` · ${m.res} ${m.pf}-${m.pa}`:''}"><b>${wk}</b> ${m.home?'vs':'@'} ${escHtml(String(m.opp))}${m.res?`<span class="wr-res">${m.res}</span>`:''}</button>`);
   }
   if(!chips.length) return '';
-  return `<div class="wr-chips">${chips.join('')}${picks.size?`<button type="button" class="wr-chip wr-chip-clear" onclick="weekPickClear('${tm}')">clear</button>`:''}</div>`;
+  return `<div class="wr-chips">${chips.join('')}${picks.size?`<button type="button" class="wr-chip wr-chip-clear" onclick="weekPickClear('${tm}','${s}')">clear</button>`:''}</div>`;
 }
 
-function renderWeekNumberRail(className=''){
+// opts.pickTeam (with opts.season) makes the numbers taps — the league-wide card's picker,
+// where a week is a week: the picked ones ring, the rest dim while a pick is on.
+function renderWeekNumberRail(className='', opts){
+  opts=opts||{};
   const cells=[];
-  const maxWk=(typeof tcSeasonMaxWeek==='function' && typeof activeSeason!=='undefined')?tcSeasonMaxWeek(activeSeason):18;
-  const played=(typeof tcSeasonPlayedWeek==='function' && typeof activeSeason!=='undefined')?tcSeasonPlayedWeek(activeSeason):maxWk;
+  const s=(opts.season!=null) ? String(opts.season) : ((typeof activeSeason!=='undefined')?activeSeason:undefined);
+  const maxWk=(typeof tcSeasonMaxWeek==='function' && s!==undefined)?tcSeasonMaxWeek(s):18;
+  const played=(typeof tcSeasonPlayedWeek==='function' && s!==undefined)?tcSeasonPlayedWeek(s):maxWk;
   const span=Math.max(1,maxWk-1);
+  const pickTeam=opts.pickTeam ? String(opts.pickTeam).toUpperCase() : '';
+  const picks=pickTeam ? weekPicks(pickTeam, s) : null;
   for(let wk=1; wk<=maxWk; wk++){
     const ratio=((wk-1)/span).toFixed(6);
     const pos=`calc(var(--wr-pad, 0px) + (100% - (2 * var(--wr-pad, 0px))) * ${ratio})`;
     const laneCls = ((wk%2===0) ? ' wr-week-top' : ' wr-week-bottom') + (wk>played ? ' wr-unplayed' : '');
-    cells.push(`<div class="wr-week-cell${laneCls}" style="left:${pos}" title="Week ${wk}">
+    const canPick = !!pickTeam && wk<=played;
+    const on = canPick && picks.has(wk);
+    const pickCls = canPick ? ' wr-pickable' + (on ? ' wr-picked' : (picks.size ? ' wr-dim' : '')) : '';
+    const tap = canPick ? ` role="button" tabindex="0" onclick="weekPickToggle('${pickTeam}',${wk},event,'${s}')" onkeydown="if(event.key==='Enter'||event.key===' '){weekPickToggle('${pickTeam}',${wk},event,'${s}');}"` : '';
+    cells.push(`<div class="wr-week-cell${laneCls}${pickCls}" style="left:${pos}" title="Week ${wk}${canPick?(on?' · tap to drop':' · tap to filter to this week'):''}"${tap}>
       <span class="wr-week-stem"></span>
       <span class="wr-week-num">${wk}</span>
     </div>`);
@@ -7430,7 +7532,8 @@ function historicalTagContext(base, team, season){
 // Kick off a week-range fetch+recompute+rerender. Called when the slider is released.
 async function applyWeekRange(team, fromWk, toWk, weeks){
   const state=userProj[team]; if(!state) return;
-  if(!(weeks && weeks.size)) state.weekPick=null;   // the slider's span replaces any picked games
+  if(!(weeks && weeks.size)){ state.weekPick=null; setSharedWeekPicks(team, activeSeason, null); }   // the slider's span replaces any picked games
+  else { state.weekPick=[...weeks].sort((a,b)=>a-b); setSharedWeekPicks(team, activeSeason, state.weekPick); }
   setSharedWeekRange(team, activeSeason, fromWk, toWk);
   state.weekFilter=[fromWk,toWk];
   state.weekFilterLoading=true;
@@ -7471,7 +7574,7 @@ async function applyWeekRange(team, fromWk, toWk, weeks){
 }
 function resetWeekRange(team){
   const state=userProj[team]; if(!state) return;
-  setSharedWeekRange(team, activeSeason, 1, 18);
+  setSharedWeekRange(team, activeSeason, 1, 18); setSharedWeekPicks(team, activeSeason, null);
   state.weekFilter=null; state.weekPick=null; state.weekFilterData=null; state.weekFilterQBPool=null; state.weekFilterQBData=null;
   state.passing_shares=null; state.rushing.shares=null;
   initPassingShares(team); initRushingShares(team);
@@ -14186,34 +14289,18 @@ function weekRangeSliderHTML(team,state){
     setTimeout(()=>{ try{ applyWeekRange(team, lo, hi); }catch(e){} }, 0);
   }
   // The whole season on the slider; the thumbs hold to the weeks this team has played
-  // and the rest of the track reads as not yet played.
+  // and the rest of the track reads as not yet played. The card itself is the one every
+  // week slider draws (weekRangeCardHTML); only the handlers and the rail are this tab's.
   const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(activeSeason):18;
   const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(activeSeason, team):maxWk;
-  const hiShown=Math.min(hi,played), span=Math.max(1,maxWk-1);
-  const loPct=(Math.min(lo,played)-1)/span*100, hiPct=(maxWk-hiShown)/span*100;
-  const dead = played<maxWk ? `<div class="dual-slider-dead" style="left:${((played-1)/span*100).toFixed(2)}%" title="Weeks ${played+1}–${maxWk}: not played yet"></div>` : '';
-  const oppRail = (typeof renderWeekOpponentRail==='function')
-    ? renderWeekOpponentRail(team, activeSeason, 'wr-opp-main')
-    : '';
-  const open=(typeof _wrChipsOpen!=='undefined' && _wrChipsOpen);
-  return `<div class="week-range-card${open?' wr-open':''}" onclick="weekCardTap(event)">
-    <div class="week-range-label">
-      <span>${TC_ICON("calendar")} Filter weeks: <b id="wr-lo-${team}">${Math.min(lo,played)}</b> – <b id="wr-hi-${team}">${hiShown}</b>${played<maxWk?` <span class="week-range-hint">of ${played} played</span>`:''}${state.weekFilterLoading?' <span class="week-range-loading">loading…</span>':''}</span>
-      ${active?`<span class="week-range-reset" onclick="resetWeekRange('${team}')">↺ Reset to full season</span>`:'<span class="week-range-hint week-range-help">drag either end to zoom into a stretch of games · or tap a game below to filter to it</span>'}
-      <span class="wr-more" aria-hidden="true">${open?'hide ▴':'games ▾'}</span>
-    </div>
-    ${(state.weekPick&&state.weekPick.length)?`<div class="week-range-picked">Picked game${state.weekPick.length>1?'s':''}: <b>wk ${state.weekPick.join(', ')}</b> · click off to clear</div>`:''}
-    <div class="dual-slider">
-      <div class="dual-slider-track"></div>
-      ${dead}<div class="dual-slider-fill" id="wr-fill-${team}" style="left:${loPct}%;right:${hiPct}%"></div>
-      <input type="range" min="1" max="${maxWk}" step="1" value="${Math.min(lo,played)}" class="dual-range dual-range-lo"
-        oninput="weekRangeDrag('${team}','lo',this.value)" onchange="weekRangeCommit('${team}')">
-      <input type="range" min="1" max="${maxWk}" step="1" value="${hiShown}" class="dual-range dual-range-hi"
-        oninput="weekRangeDrag('${team}','hi',this.value)" onchange="weekRangeCommit('${team}')">
-      ${oppRail}
-    </div>
-    ${(typeof weekPickChipsHTML==='function')?weekPickChipsHTML(team, activeSeason):''}
-  </div>`;
+  return weekRangeCardHTML({
+    team, season:activeSeason, lo, hi, maxWk, played, active, loading:!!state.weekFilterLoading,
+    idPrefix:'wr',
+    onDrag:(which)=>`weekRangeDrag('${team}','${which}',this.value)`,
+    onCommit:`weekRangeCommit('${team}')`,
+    onReset:`resetWeekRange('${team}')`,
+    rail:(typeof renderWeekOpponentRail==='function') ? renderWeekOpponentRail(team, activeSeason, 'wr-opp-main') : '',
+  });
 }
 function setPassSub(t){passingSubTab=t;renderContent();}
 
@@ -27137,9 +27224,13 @@ function _advGetWeekRange(team){
   if(typeof getSharedWeekRange==='function') return getSharedWeekRange(team, advTeamSeason());
   return [1,18];
 }
+// The picked games on this card, shared with the projections tabs (same team, same season).
+function _advWeekPicks(team){
+  return (typeof weekPicks==='function') ? weekPicks(team, advTeamSeason()) : new Set();
+}
 function _advWeekRangeActive(team){
   const [lo,hi]=_advGetWeekRange(team);
-  return lo>1 || hi<18;
+  return lo>1 || hi<18 || _advWeekPicks(team).size>0;
 }
 function _advWeekLabel(team){
   const [lo,hi]=_advGetWeekRange(team);
@@ -27185,6 +27276,7 @@ function advWeekRangeCommit(team){
   const next=_advWeekDragByTeam[key] || _advGetWeekRange(team);
   delete _advWeekDragByTeam[key];
   if(typeof setSharedWeekRange==='function') setSharedWeekRange(team, advTeamSeason(), next[0], next[1]);
+  if(typeof setSharedWeekPicks==='function') setSharedWeekPicks(team, advTeamSeason(), null);   // a span, not picks
   if(team!==ADV_LEAGUE_RANGE_KEY && typeof applyWeekRange==='function' && advTeamSeason()===String(activeSeason)){
     applyWeekRange(team, next[0], next[1]);
     return;
@@ -27194,6 +27286,7 @@ function advWeekRangeCommit(team){
 function advWeekRangeReset(team){
   team=String(team||'').toUpperCase();
   if(typeof setSharedWeekRange==='function') setSharedWeekRange(team, advTeamSeason(), 1, 18);
+  if(typeof setSharedWeekPicks==='function') setSharedWeekPicks(team, advTeamSeason(), null);
   if(team!==ADV_LEAGUE_RANGE_KEY && typeof resetWeekRange==='function' && advTeamSeason()===String(activeSeason)){
     resetWeekRange(team);
     return;
@@ -27261,15 +27354,20 @@ function olEnsureWeekly(season, onReady){
   Promise.resolve(ensureNflverseSection('ol_weekly', season)).then(ok=>{ if(ok && onReady) onReady(); }).catch(()=>{}).finally(()=>{ _olWeeklyKick[season]=false; });
   return true;
 }
-function _advComputeOlRangeTables(season, lo, hi){
-  const cacheKey=`${season}:${lo}-${hi}`;
+// `weeks` (a Set) narrows the window to picked games; without it the span lo..hi applies.
+function _advWeekKeep(lo, hi, weeks){
+  return (w)=> Number.isFinite(w) && (weeks && weeks.size ? weeks.has(w) : (w>=lo && w<=hi));
+}
+function _advWeeksKey(weeks){ return (weeks && weeks.size) ? ':p'+[...weeks].sort((a,b)=>a-b).join(',') : ''; }
+function _advComputeOlRangeTables(season, lo, hi, weeks){
+  const cacheKey=`${season}:${lo}-${hi}${_advWeeksKey(weeks)}`;
   if(_advOlRangeCache[cacheKey]) return _advOlRangeCache[cacheKey];
   const pack=(NFLVERSE&&NFLVERSE[String(season)]&&NFLVERSE[String(season)].ol_weekly)||null;
   if(!pack || !pack.teams || !Array.isArray(pack.weeks)) return null;
+  const keep=_advWeekKeep(lo, hi, weeks);
   const weekIdx=[];
   for(let i=0;i<pack.weeks.length;i++){
-    const w=Number(pack.weeks[i]);
-    if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i);
+    if(keep(Number(pack.weeks[i]))) weekIdx.push(i);
   }
   if(!weekIdx.length) return null;
   const pcols=pack.pass_cols||[];
@@ -27416,15 +27514,15 @@ function _advComputeOlRangeTables(season, lo, hi){
   return out;
 }
 
-function _advComputeGeneralRangeTables(season, lo, hi){
-  const cacheKey=`${season}:${lo}-${hi}`;
+function _advComputeGeneralRangeTables(season, lo, hi, weeks){
+  const cacheKey=`${season}:${lo}-${hi}${_advWeeksKey(weeks)}`;
   if(_advGenRangeCache[cacheKey]) return _advGenRangeCache[cacheKey];
   const pack=(NFLVERSE&&NFLVERSE[String(season)]&&NFLVERSE[String(season)].adv_weekly)||null;
   if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols)) return null;
+  const keep=_advWeekKeep(lo, hi, weeks);
   const weekIdx=[];
   for(let i=0;i<pack.weeks.length;i++){
-    const w=Number(pack.weeks[i]);
-    if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i);
+    if(keep(Number(pack.weeks[i]))) weekIdx.push(i);
   }
   if(!weekIdx.length) return null;
   const cols=pack.cols;
@@ -27586,19 +27684,20 @@ function _advTableForRange(key, baseTable, team){
   if(!baseTable) return baseTable;
   if(!_advSeasonCanRange()) return baseTable;
   const [lo,hi]=_advGetWeekRange(team);
+  const picks=_advWeekPicks(team);
   const season=String(advTeamSeason());
   const liveCurrent = typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season)
     && typeof completedWeeks==='function' && completedWeeks()>0;
   if(!_advWeekRangeActive(team) && !liveCurrent) return baseTable;
   if(key==='offensive_line_pass' || key==='offensive_line_run'){
-    const agg=_advComputeOlRangeTables(season, lo, hi);
+    const agg=_advComputeOlRangeTables(season, lo, hi, picks);
     if(!agg) return baseTable;
     if(key==='offensive_line_pass') agg.passTbl.title = baseTable.title;
     if(key==='offensive_line_run') agg.runTbl.title = baseTable.title;
     return key==='offensive_line_pass' ? agg.passTbl : agg.runTbl;
   }
   if(key==='offense' || key==='defense' || key==='tendencies' || key==='pace'){
-    const agg=_advComputeGeneralRangeTables(season, lo, hi);
+    const agg=_advComputeGeneralRangeTables(season, lo, hi, picks);
     if(!agg || !agg[key]) return baseTable;
     const aggTbl=agg[key];
     const baseTeams=(baseTable&&baseTable.teams)||{};
@@ -27623,7 +27722,7 @@ function _advTableForRange(key, baseTable, team){
     return Object.assign({}, baseTable, { columns: cols, teams: outTeams });
   }
   if(key==='personnel' || key==='coverage' || key==='def_tendencies' || key==='defensive_line'){
-    const agg=_advComputeGeneralRangeTables(season, lo, hi);
+    const agg=_advComputeGeneralRangeTables(season, lo, hi, picks);
     if(!agg || !agg[key]) return baseTable;
     const aggTbl=agg[key];
     const baseTeams=(baseTable&&baseTable.teams)||{};
@@ -27651,42 +27750,31 @@ function renderAdvWeekRange(team, opts){
   if(!_advSeasonCanRange()) return '';
   _advEnsureWeeklyLoaded();
   opts = opts || {};
-  const showOppRail = opts.showOppRail !== false;
-  const extraRail = opts.extraRailHTML || '';
-  const [lo0,hi0]=_advGetWeekRange(team);
-  const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(advTeamSeason()):18;
-  const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(advTeamSeason(), team===ADV_LEAGUE_RANGE_KEY?null:team):maxWk;
-  const lo=Math.min(lo0,played), hi=Math.min(hi0,played), span=Math.max(1,maxWk-1);
-  const left=((lo-1)/span*100), right=((maxWk-hi)/span*100);
-  const dead = played<maxWk ? `<div class="dual-slider-dead" style="left:${((played-1)/span*100).toFixed(2)}%" title="Weeks ${played+1}–${maxWk}: not played yet"></div>` : '';
-  const loading=_advWeeklySeedLoading ? '<span class="week-range-loading">loading…</span>' : '';
-  const active = _advWeekRangeActive(team);
-  const oppRail = (showOppRail && typeof renderWeekOpponentRail==='function')
-    ? renderWeekOpponentRail(team, advTeamSeason(), 'wr-opp-adv')
-    : '';
-  return `<div class="week-range-card adv-week-range-card">
-    <div class="week-range-label">
-      <span>${TC_ICON("calendar")} Filter weeks: <b id="adv-wr-lo-${team}">${lo}</b> – <b id="adv-wr-hi-${team}">${hi}</b>${played<maxWk?` <span class="week-range-hint">of ${played} played</span>`:''}${loading ? ' ' + loading : ''}</span>
-      ${active ? `<span class="week-range-reset" onclick="advWeekRangeReset('${escJsSingle(team)}')">↺ Reset to full season</span>` : '<span class="week-range-hint">drag either end to zoom into a stretch of games</span>'}
-    </div>
-    <div class="dual-slider">
-      <div class="dual-slider-track"></div>
-      ${dead}<div class="dual-slider-fill" id="adv-wr-fill-${team}" style="left:${left}%;right:${right}%;"></div>
-      <input class="dual-range" type="range" min="1" max="${maxWk}" step="1" value="${lo}" oninput="advWeekRangeDrag('${team}','lo',this.value)" onchange="advWeekRangeCommit('${team}')">
-      <input class="dual-range" type="range" min="1" max="${maxWk}" step="1" value="${hi}" oninput="advWeekRangeDrag('${team}','hi',this.value)" onchange="advWeekRangeCommit('${team}')">
-      ${extraRail}
-      ${oppRail}
-    </div>
-  </div>`;
+  team=String(team||'').toUpperCase();
+  const league = team===ADV_LEAGUE_RANGE_KEY;
+  const season = String(advTeamSeason());
+  const [lo,hi]=_advGetWeekRange(team);
+  const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(season):18;
+  const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(season, league?null:team):maxWk;
+  // The same card the projections tabs draw, on the same shared picks. A team's rail is its
+  // opponents with every game's W or L; the league-wide card's rail is the week numbers, and
+  // they are the taps.
+  const rail = league
+    ? ((typeof renderWeekNumberRail==='function') ? renderWeekNumberRail('wr-week-adv', {pickTeam:team, season}) : '')
+    : ((opts.showOppRail!==false && typeof renderWeekOpponentRail==='function') ? renderWeekOpponentRail(team, season, 'wr-opp-adv') : '');
+  return weekRangeCardHTML({
+    team, season, lo, hi, maxWk, played, league,
+    active:_advWeekRangeActive(team), loading:!!_advWeeklySeedLoading,
+    idPrefix:'adv-wr',
+    onDrag:(which)=>`advWeekRangeDrag('${team}','${which}',this.value)`,
+    onCommit:`advWeekRangeCommit('${team}')`,
+    onReset:`advWeekRangeReset('${escJsSingle(team)}')`,
+    rail,
+  });
 }
 
 function renderAdvLeagueWeekRange(){
-  return renderAdvWeekRange(ADV_LEAGUE_RANGE_KEY, {
-    showOppRail:false,
-    extraRailHTML:(typeof renderWeekNumberRail==='function') ? renderWeekNumberRail('wr-week-adv') : '',
-    title:'League-wide advanced week range:',
-    summaryHint:'Windowed recompute applies to all 32 teams on the selected table (same season, weeks only).'
-  });
+  return renderAdvWeekRange(ADV_LEAGUE_RANGE_KEY, { showOppRail:false });
 }
 
 // Projected-season OL overall-score chip shown next to the OL Pass / OL Run block titles.
@@ -27804,11 +27892,11 @@ const ADV_POWER_SPECS = [
   { key:'points_allowed_pg',       label:'Points Allowed',              lowerBetter:true  },
 ];
 var _advPowerMemo = {};
-function advPowerTable(season, lo, hi){
+function advPowerTable(season, lo, hi, weeks){
   season = String(season);
   const pack = (NFLVERSE && NFLVERSE[season] && NFLVERSE[season].adv_weekly) || null;
   if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols)) return null;
-  const key = `${season}:${lo}-${hi}:${pack.weeks.length}:${Object.keys(pack.teams).length}`;
+  const key = `${season}:${lo}-${hi}${_advWeeksKey(weeks)}:${pack.weeks.length}:${Object.keys(pack.teams).length}`;
   if(_advPowerMemo[key]) return _advPowerMemo[key];
   const need = ['off_pass_epa','off_pass_plays','off_run_epa','off_run_plays',
                 'def_pass_epa_allowed','def_pass_plays','def_run_epa_allowed','def_run_plays','pace_games'];
@@ -27819,8 +27907,8 @@ function advPowerTable(season, lo, hi){
   ci.pts = actual ? pack.cols.indexOf('off_pts') : pack.cols.indexOf('off_drive_pts');
   ci.allowed = actual ? pack.cols.indexOf('def_pts_allowed') : pack.cols.indexOf('def_drive_pts_allowed');
   if(ci.pts<0 || ci.allowed<0) return null;
-  const weekIdx=[];
-  pack.weeks.forEach((w,i)=>{ w=Number(w); if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i); });
+  const weekIdx=[]; const keep=_advWeekKeep(lo, hi, weeks);
+  pack.weeks.forEach((w,i)=>{ if(keep(Number(w))) weekIdx.push(i); });
   if(!weekIdx.length) return null;
   const metrics={};
   Object.keys(pack.teams).forEach(tm=>{
@@ -27852,10 +27940,11 @@ function advPowerTable(season, lo, hi){
   return out;
 }
 // Week-by-week trajectory: the league rank after each week in the range (season to date).
-function advPowerTrajectory(season, lo, hi){
-  const full=advPowerTable(season, lo, hi); if(!full) return null;
+function advPowerTrajectory(season, lo, hi, weeks){
+  const full=advPowerTable(season, lo, hi, weeks); if(!full) return null;
   const out={};
-  full.weeks.forEach(w=>{ const t=advPowerTable(season, lo, w); if(!t) return;
+  // the rank after each week of the window: with picks, after each picked week in turn
+  full.weeks.forEach(w=>{ const t=advPowerTable(season, lo, w, (weeks&&weeks.size)?new Set([...weeks].filter(x=>x<=w)):null); if(!t) return;
     t.rows.forEach(r=>{ (out[r.team]=out[r.team]||[]).push({week:w, rank:r.leagueRank, avg:r.avg}); }); });
   return out;
 }
@@ -27915,7 +28004,7 @@ function _advTeamPowerScore(team, src, opts){
   };
   if(o.stableFromSource) return fallbackFromSrc();
   const [lo, hi] = _advGetWeekRange(team);
-  const tbl = advPowerTable(season, lo, hi);
+  const tbl = advPowerTable(season, lo, hi, _advWeekPicks(team));
   if(!tbl){
     // A season nflverse covers just hasn't loaded its adv_weekly yet: kick it and show nothing
     // until the real six-metric score lands, rather than the misleading Sharp-table average.
@@ -28605,8 +28694,9 @@ function renderSOSView(){
   // offense AND defense, so it lives here rather than under either category.
   const pwSeason=String(advTeamSeason());
   const [pwLo,pwHi]=(typeof _advGetWeekRange==='function')?_advGetWeekRange(ADV_LEAGUE_RANGE_KEY):[1,18];
-  const power=(typeof advPowerTable==='function')?advPowerTable(pwSeason, pwLo, pwHi):null;
-  const traj=(power && typeof advPowerTrajectory==='function')?advPowerTrajectory(pwSeason, pwLo, pwHi):null;
+  const pwPicks=(typeof _advWeekPicks==='function')?_advWeekPicks(ADV_LEAGUE_RANGE_KEY):null;
+  const power=(typeof advPowerTable==='function')?advPowerTable(pwSeason, pwLo, pwHi, pwPicks):null;
+  const traj=(power && typeof advPowerTrajectory==='function')?advPowerTrajectory(pwSeason, pwLo, pwHi, pwPicks):null;
   if(power) entries.forEach(e=>{ const r=power.rows.find(x=>x.team===e.code); e.power=r||null; e.powerRank=r?r.leagueRank:null; });
   // Table beneath
   let sortDir=sharpSortDir;
@@ -28710,7 +28800,8 @@ function renderPowerTrendChart(power, traj){
   const lines=order.map(team).join('');
   const xlbl=weeks.map(w=>`<text x="${x(w)}" y="${padT-18}" class="pw-xlbl" text-anchor="middle">${w}</text>`).join('');
   const lo=power.weeks[0], hi=power.weeks[power.weeks.length-1];
-  const windowTxt = (power.lo>1 || power.hi<18) ? `weeks ${lo}–${hi} only (the week range above)` : `weeks ${lo}–${hi}`;
+  const picksTxt = (power.weeks.length>1 && power.weeks.some((w,i)=>i>0 && w!==power.weeks[i-1]+1)) ? `weeks ${power.weeks.join(', ')} only (picked above)` : '';
+  const windowTxt = picksTxt || ((power.lo>1 || power.hi<18) ? `weeks ${lo}–${hi} only (the week range above)` : `weeks ${lo}–${hi}`);
   const caption = focus ? (()=>{ const p=traj[focus]; const a=p[0].rank, b=p[p.length-1].rank, d=a-b;
       return `${teamDisplayName(focus)}: ${ordinal(b)} now${p.length>1?` · ${d>0?`up ${d}`:d<0?`down ${-d}`:'unchanged'} since week ${p[0].week}`:''} · tap again to release`; })()
     : 'tap a line, a logo, or a row below to follow one team';

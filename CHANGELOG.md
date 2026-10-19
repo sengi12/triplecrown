@@ -6,6 +6,10 @@ this file is the merge history, newest first, one line per PR. Add a line when a
 
 Open work lives in [TODO.md](TODO.md).
 
+## 2026-10-19
+
+- feat(team): one week filter for the whole team view — a picked game survives the walk from Passing to Receiving to Adv Metrics, the Adv Metrics card is the projections card (W/L rail, taps, chips, fold) on the same shared pick, the league-wide Advanced page picks by week number and the Power Score follows; one builder and one class draw every week slider (#192)
+
 ## 2026-10-16
 
 - fix(analyzer): the Trending board says what it measures — one short bar with an ⓘ for the method and the held-out names — holds out injured, absent and returning players, anchors its windows to the sidecar's complete weeks with byes skipped, and pools target shares over the window (#191)
