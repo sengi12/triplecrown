@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-19
 
+- fix(team): with a week range or picked games on, the rank chips rank against the league over the same weeks — a window pool built from Sleeper's week stats for every skill player — instead of against season totals, which read a one-week total as last of all (#195)
 - feat(game-center): a tap on the win probability line also jumps the field to that play — the drive up to it, the play drawn, the Replay tag — and closing the bubble hands the field back (#194)
 - feat(game-center): tap or drag the win probability line and a bubble names the play behind that point — quarter and clock, the score as it stood, the play, the favoured side's chance and the move from the play before (#193)
 - feat(team): one week filter for the whole team view — a picked game survives the walk from Passing to Receiving to Adv Metrics, the Adv Metrics card is the projections card (W/L rail, taps, chips, fold) on the same shared pick, the league-wide Advanced page picks by week number and the Power Score follows; one builder and one class draw every week slider (#192)

@@ -10615,7 +10615,74 @@ function pcardRankTag(rk, key, pos){
 // Distributions memoise on the buildPlayerList cache epoch, so a row of chips costs one
 // sort, not one per chip. Format is ordinal ("1st / 120"), colored by percentile.
 let _lgDistCache={}, _lgDistSig=null;
-function _lgPool(){ return (typeof buildPlayerList==='function')?buildPlayerList():[]; }
+// ── The window pool ────────────────────────────────────────────────────────────
+// With a week filter on the team in view, a total is a few games' worth, and ranking it
+// against everyone's season would put it last whatever the games were (a 14-carry week read
+// 33rd of 32). So the chips rank against the league over the SAME weeks: Sleeper's week
+// stats for every QB, RB, WR and TE, summed over the window, in the pool's own field names.
+// The pool is built once per (season, weeks) and cached; until it lands the chips stay
+// blank rather than rank against the wrong pool.
+let _lgWindowPools={}, _lgWindowBusy={};
+const LG_WINDOW_FIELDS={rush_att:'rushing_attempts', rush_yd:'rushing_yards', rush_td:'rushing_tds', rec_tgt:'receiving_targets', rec:'receptions', rec_yd:'receiving_yards', rec_td:'receiving_tds',
+  pass_att:'passing_attempts', pass_cmp:'passing_completions', pass_yd:'passing_yards', pass_td:'passing_tds', pass_int:'interceptions_thrown', fum_lost:'fumbles_lost', gp:'games'};
+// The week window of the team in view, or null when the whole season is on.
+function _lgWindow(){
+  try{
+    const tm=(typeof currentTeam!=='undefined') ? String(currentTeam||'').toUpperCase() : '';
+    const s=(typeof activeSeason!=='undefined') ? String(activeSeason) : '';
+    if(!tm || !/^\d{4}$/.test(s) || typeof getSharedWeekRange!=='function') return null;
+    const [lo,hi]=getSharedWeekRange(tm, s);
+    const picks=(typeof weekPicks==='function') ? weekPicks(tm, s) : new Set();
+    if(!(lo>1 || hi<18 || picks.size)) return null;
+    const played=(typeof tcSeasonPlayedWeek==='function') ? tcSeasonPlayedWeek(s, tm) : 18;
+    const weeks=picks.size ? [...picks].filter(w=>w<=played).sort((a,b)=>a-b) : Array.from({length:Math.max(0, Math.min(hi,played)-lo+1)}, (_,i)=>lo+i);
+    if(!weeks.length) return null;
+    return {season:s, weeks, key:`${s}:${weeks.join(',')}`};
+  }catch(e){ return null; }
+}
+// Sleeper's week rows for one week, every skill position — the four pulls the Leaders use.
+async function _lgWeekRows(season, wk){
+  const pos=['QB','RB','WR','TE'];
+  const parts=await Promise.all(pos.map(p=>fetchWeekStats(season, wk, p).catch(()=>null)));
+  return [].concat(...parts.map(r=>Array.isArray(r)?r:[]));
+}
+async function ensureLeagueWindowPool(season, weeks){
+  const key=`${season}:${weeks.join(',')}`;
+  if(_lgWindowPools[key]) return _lgWindowPools[key];
+  if(_lgWindowBusy[key]) return _lgWindowBusy[key];
+  _lgWindowBusy[key]=(async()=>{
+    try{
+      const perWeek=await Promise.all(weeks.map(w=>_lgWeekRows(season, w)));
+      const acc={};
+      perWeek.forEach(rows=>rows.forEach(r=>{
+        if(!r || !r.player_id) return;
+        const pos=r.position || (r.player&&r.player.position) || '';
+        if(!/^(QB|RB|WR|TE)$/.test(pos)) return;
+        const st=r.stats||{}; const k=String(r.player_id);
+        const o=acc[k] || (acc[k]={player_id:k, name:(r.player?`${r.player.first_name||''} ${r.player.last_name||''}`.trim():'')||k, pos, team:r.team||null,
+          passing_yards:0,passing_tds:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,rushing_yards:0,rushing_tds:0,rushing_attempts:0,receiving_yards:0,receiving_tds:0,receptions:0,receiving_targets:0,fumbles_lost:0,games:0});
+        if(r.team) o.team=r.team;   // the team he was on in the latest week of the window
+        for(const sk in LG_WINDOW_FIELDS){ const v=Number(st[sk]); if(Number.isFinite(v)) o[LG_WINDOW_FIELDS[sk]]+=v; }
+      }));
+      const list=Object.keys(acc).map(k=>acc[k]);
+      _lgWindowPools[key]=list; _lgDistCache={}; _lgDistSig=null;
+      try{ if(typeof renderContent==='function') renderContent(); }catch(e){}   // the pool stands whatever the repaint does
+      return list;
+    }catch(e){ return null; }
+    finally{ delete _lgWindowBusy[key]; }
+  })();
+  return _lgWindowBusy[key];
+}
+function _lgPool(){
+  const win=_lgWindow();
+  if(win){
+    const pool=_lgWindowPools[win.key];
+    if(pool) return pool;
+    if(typeof fetchWeekStats==='function' && typeof sleeperFetch==='function') ensureLeagueWindowPool(win.season, win.weeks);
+    return [];   // blank chips until the window's pool lands
+  }
+  return (typeof buildPlayerList==='function')?buildPlayerList():[];
+}
 function _lgPosMatch(p, posSel){ return !posSel ? true : (Array.isArray(posSel) ? posSel.indexOf(p.pos)>=0 : p.pos===posSel); }
 function _lgPosKey(posSel){ return Array.isArray(posSel)?posSel.join('+'):(posSel||'*'); }
 function _lgCache(k, build){
@@ -10625,7 +10692,10 @@ function _lgCache(k, build){
   // rendered right after would rank against the previous season. The list reference is replaced
   // on every rebuild, so it's the reliable signal.
   const list=_lgPool();
-  const sig=(typeof _buildPlayerCache!=='undefined' && _buildPlayerCache && _buildPlayerCache.list) ? _buildPlayerCache.list : list;
+  const win=_lgWindow();
+  // a window pool is its own identity (one array per window key); the season pool keys on
+  // buildPlayerList's one-slot list as before
+  const sig=win ? (_lgWindowPools[win.key]||list) : ((typeof _buildPlayerCache!=='undefined' && _buildPlayerCache && _buildPlayerCache.list) ? _buildPlayerCache.list : list);
   if(_lgDistSig!==sig){ _lgDistCache={}; _lgDistSig=sig; }
   if(_lgDistCache[k]) return _lgDistCache[k];
   const v=build(list); _lgDistCache[k]=v; return v;
