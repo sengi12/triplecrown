@@ -443,8 +443,9 @@ function renderSOSView(){
   // offense AND defense, so it lives here rather than under either category.
   const pwSeason=String(advTeamSeason());
   const [pwLo,pwHi]=(typeof _advGetWeekRange==='function')?_advGetWeekRange(ADV_LEAGUE_RANGE_KEY):[1,18];
-  const power=(typeof advPowerTable==='function')?advPowerTable(pwSeason, pwLo, pwHi):null;
-  const traj=(power && typeof advPowerTrajectory==='function')?advPowerTrajectory(pwSeason, pwLo, pwHi):null;
+  const pwPicks=(typeof _advWeekPicks==='function')?_advWeekPicks(ADV_LEAGUE_RANGE_KEY):null;
+  const power=(typeof advPowerTable==='function')?advPowerTable(pwSeason, pwLo, pwHi, pwPicks):null;
+  const traj=(power && typeof advPowerTrajectory==='function')?advPowerTrajectory(pwSeason, pwLo, pwHi, pwPicks):null;
   if(power) entries.forEach(e=>{ const r=power.rows.find(x=>x.team===e.code); e.power=r||null; e.powerRank=r?r.leagueRank:null; });
   // Table beneath
   let sortDir=sharpSortDir;
@@ -548,7 +549,8 @@ function renderPowerTrendChart(power, traj){
   const lines=order.map(team).join('');
   const xlbl=weeks.map(w=>`<text x="${x(w)}" y="${padT-18}" class="pw-xlbl" text-anchor="middle">${w}</text>`).join('');
   const lo=power.weeks[0], hi=power.weeks[power.weeks.length-1];
-  const windowTxt = (power.lo>1 || power.hi<18) ? `weeks ${lo}–${hi} only (the week range above)` : `weeks ${lo}–${hi}`;
+  const picksTxt = (power.weeks.length>1 && power.weeks.some((w,i)=>i>0 && w!==power.weeks[i-1]+1)) ? `weeks ${power.weeks.join(', ')} only (picked above)` : '';
+  const windowTxt = picksTxt || ((power.lo>1 || power.hi<18) ? `weeks ${lo}–${hi} only (the week range above)` : `weeks ${lo}–${hi}`);
   const caption = focus ? (()=>{ const p=traj[focus]; const a=p[0].rank, b=p[p.length-1].rank, d=a-b;
       return `${teamDisplayName(focus)}: ${ordinal(b)} now${p.length>1?` · ${d>0?`up ${d}`:d<0?`down ${-d}`:'unchanged'} since week ${p[0].week}`:''} · tap again to release`; })()
     : 'tap a line, a logo, or a row below to follow one team';

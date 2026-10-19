@@ -279,9 +279,13 @@ function _advGetWeekRange(team){
   if(typeof getSharedWeekRange==='function') return getSharedWeekRange(team, advTeamSeason());
   return [1,18];
 }
+// The picked games on this card, shared with the projections tabs (same team, same season).
+function _advWeekPicks(team){
+  return (typeof weekPicks==='function') ? weekPicks(team, advTeamSeason()) : new Set();
+}
 function _advWeekRangeActive(team){
   const [lo,hi]=_advGetWeekRange(team);
-  return lo>1 || hi<18;
+  return lo>1 || hi<18 || _advWeekPicks(team).size>0;
 }
 function _advWeekLabel(team){
   const [lo,hi]=_advGetWeekRange(team);
@@ -327,6 +331,7 @@ function advWeekRangeCommit(team){
   const next=_advWeekDragByTeam[key] || _advGetWeekRange(team);
   delete _advWeekDragByTeam[key];
   if(typeof setSharedWeekRange==='function') setSharedWeekRange(team, advTeamSeason(), next[0], next[1]);
+  if(typeof setSharedWeekPicks==='function') setSharedWeekPicks(team, advTeamSeason(), null);   // a span, not picks
   if(team!==ADV_LEAGUE_RANGE_KEY && typeof applyWeekRange==='function' && advTeamSeason()===String(activeSeason)){
     applyWeekRange(team, next[0], next[1]);
     return;
@@ -336,6 +341,7 @@ function advWeekRangeCommit(team){
 function advWeekRangeReset(team){
   team=String(team||'').toUpperCase();
   if(typeof setSharedWeekRange==='function') setSharedWeekRange(team, advTeamSeason(), 1, 18);
+  if(typeof setSharedWeekPicks==='function') setSharedWeekPicks(team, advTeamSeason(), null);
   if(team!==ADV_LEAGUE_RANGE_KEY && typeof resetWeekRange==='function' && advTeamSeason()===String(activeSeason)){
     resetWeekRange(team);
     return;
@@ -403,15 +409,20 @@ function olEnsureWeekly(season, onReady){
   Promise.resolve(ensureNflverseSection('ol_weekly', season)).then(ok=>{ if(ok && onReady) onReady(); }).catch(()=>{}).finally(()=>{ _olWeeklyKick[season]=false; });
   return true;
 }
-function _advComputeOlRangeTables(season, lo, hi){
-  const cacheKey=`${season}:${lo}-${hi}`;
+// `weeks` (a Set) narrows the window to picked games; without it the span lo..hi applies.
+function _advWeekKeep(lo, hi, weeks){
+  return (w)=> Number.isFinite(w) && (weeks && weeks.size ? weeks.has(w) : (w>=lo && w<=hi));
+}
+function _advWeeksKey(weeks){ return (weeks && weeks.size) ? ':p'+[...weeks].sort((a,b)=>a-b).join(',') : ''; }
+function _advComputeOlRangeTables(season, lo, hi, weeks){
+  const cacheKey=`${season}:${lo}-${hi}${_advWeeksKey(weeks)}`;
   if(_advOlRangeCache[cacheKey]) return _advOlRangeCache[cacheKey];
   const pack=(NFLVERSE&&NFLVERSE[String(season)]&&NFLVERSE[String(season)].ol_weekly)||null;
   if(!pack || !pack.teams || !Array.isArray(pack.weeks)) return null;
+  const keep=_advWeekKeep(lo, hi, weeks);
   const weekIdx=[];
   for(let i=0;i<pack.weeks.length;i++){
-    const w=Number(pack.weeks[i]);
-    if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i);
+    if(keep(Number(pack.weeks[i]))) weekIdx.push(i);
   }
   if(!weekIdx.length) return null;
   const pcols=pack.pass_cols||[];
@@ -558,15 +569,15 @@ function _advComputeOlRangeTables(season, lo, hi){
   return out;
 }
 
-function _advComputeGeneralRangeTables(season, lo, hi){
-  const cacheKey=`${season}:${lo}-${hi}`;
+function _advComputeGeneralRangeTables(season, lo, hi, weeks){
+  const cacheKey=`${season}:${lo}-${hi}${_advWeeksKey(weeks)}`;
   if(_advGenRangeCache[cacheKey]) return _advGenRangeCache[cacheKey];
   const pack=(NFLVERSE&&NFLVERSE[String(season)]&&NFLVERSE[String(season)].adv_weekly)||null;
   if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols)) return null;
+  const keep=_advWeekKeep(lo, hi, weeks);
   const weekIdx=[];
   for(let i=0;i<pack.weeks.length;i++){
-    const w=Number(pack.weeks[i]);
-    if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i);
+    if(keep(Number(pack.weeks[i]))) weekIdx.push(i);
   }
   if(!weekIdx.length) return null;
   const cols=pack.cols;
@@ -728,19 +739,20 @@ function _advTableForRange(key, baseTable, team){
   if(!baseTable) return baseTable;
   if(!_advSeasonCanRange()) return baseTable;
   const [lo,hi]=_advGetWeekRange(team);
+  const picks=_advWeekPicks(team);
   const season=String(advTeamSeason());
   const liveCurrent = typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season)
     && typeof completedWeeks==='function' && completedWeeks()>0;
   if(!_advWeekRangeActive(team) && !liveCurrent) return baseTable;
   if(key==='offensive_line_pass' || key==='offensive_line_run'){
-    const agg=_advComputeOlRangeTables(season, lo, hi);
+    const agg=_advComputeOlRangeTables(season, lo, hi, picks);
     if(!agg) return baseTable;
     if(key==='offensive_line_pass') agg.passTbl.title = baseTable.title;
     if(key==='offensive_line_run') agg.runTbl.title = baseTable.title;
     return key==='offensive_line_pass' ? agg.passTbl : agg.runTbl;
   }
   if(key==='offense' || key==='defense' || key==='tendencies' || key==='pace'){
-    const agg=_advComputeGeneralRangeTables(season, lo, hi);
+    const agg=_advComputeGeneralRangeTables(season, lo, hi, picks);
     if(!agg || !agg[key]) return baseTable;
     const aggTbl=agg[key];
     const baseTeams=(baseTable&&baseTable.teams)||{};
@@ -765,7 +777,7 @@ function _advTableForRange(key, baseTable, team){
     return Object.assign({}, baseTable, { columns: cols, teams: outTeams });
   }
   if(key==='personnel' || key==='coverage' || key==='def_tendencies' || key==='defensive_line'){
-    const agg=_advComputeGeneralRangeTables(season, lo, hi);
+    const agg=_advComputeGeneralRangeTables(season, lo, hi, picks);
     if(!agg || !agg[key]) return baseTable;
     const aggTbl=agg[key];
     const baseTeams=(baseTable&&baseTable.teams)||{};
@@ -793,42 +805,31 @@ function renderAdvWeekRange(team, opts){
   if(!_advSeasonCanRange()) return '';
   _advEnsureWeeklyLoaded();
   opts = opts || {};
-  const showOppRail = opts.showOppRail !== false;
-  const extraRail = opts.extraRailHTML || '';
-  const [lo0,hi0]=_advGetWeekRange(team);
-  const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(advTeamSeason()):18;
-  const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(advTeamSeason(), team===ADV_LEAGUE_RANGE_KEY?null:team):maxWk;
-  const lo=Math.min(lo0,played), hi=Math.min(hi0,played), span=Math.max(1,maxWk-1);
-  const left=((lo-1)/span*100), right=((maxWk-hi)/span*100);
-  const dead = played<maxWk ? `<div class="dual-slider-dead" style="left:${((played-1)/span*100).toFixed(2)}%" title="Weeks ${played+1}–${maxWk}: not played yet"></div>` : '';
-  const loading=_advWeeklySeedLoading ? '<span class="week-range-loading">loading…</span>' : '';
-  const active = _advWeekRangeActive(team);
-  const oppRail = (showOppRail && typeof renderWeekOpponentRail==='function')
-    ? renderWeekOpponentRail(team, advTeamSeason(), 'wr-opp-adv')
-    : '';
-  return `<div class="week-range-card adv-week-range-card">
-    <div class="week-range-label">
-      <span>${TC_ICON("calendar")} Filter weeks: <b id="adv-wr-lo-${team}">${lo}</b> – <b id="adv-wr-hi-${team}">${hi}</b>${played<maxWk?` <span class="week-range-hint">of ${played} played</span>`:''}${loading ? ' ' + loading : ''}</span>
-      ${active ? `<span class="week-range-reset" onclick="advWeekRangeReset('${escJsSingle(team)}')">↺ Reset to full season</span>` : '<span class="week-range-hint">drag either end to zoom into a stretch of games</span>'}
-    </div>
-    <div class="dual-slider">
-      <div class="dual-slider-track"></div>
-      ${dead}<div class="dual-slider-fill" id="adv-wr-fill-${team}" style="left:${left}%;right:${right}%;"></div>
-      <input class="dual-range" type="range" min="1" max="${maxWk}" step="1" value="${lo}" oninput="advWeekRangeDrag('${team}','lo',this.value)" onchange="advWeekRangeCommit('${team}')">
-      <input class="dual-range" type="range" min="1" max="${maxWk}" step="1" value="${hi}" oninput="advWeekRangeDrag('${team}','hi',this.value)" onchange="advWeekRangeCommit('${team}')">
-      ${extraRail}
-      ${oppRail}
-    </div>
-  </div>`;
+  team=String(team||'').toUpperCase();
+  const league = team===ADV_LEAGUE_RANGE_KEY;
+  const season = String(advTeamSeason());
+  const [lo,hi]=_advGetWeekRange(team);
+  const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(season):18;
+  const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(season, league?null:team):maxWk;
+  // The same card the projections tabs draw, on the same shared picks. A team's rail is its
+  // opponents with every game's W or L; the league-wide card's rail is the week numbers, and
+  // they are the taps.
+  const rail = league
+    ? ((typeof renderWeekNumberRail==='function') ? renderWeekNumberRail('wr-week-adv', {pickTeam:team, season}) : '')
+    : ((opts.showOppRail!==false && typeof renderWeekOpponentRail==='function') ? renderWeekOpponentRail(team, season, 'wr-opp-adv') : '');
+  return weekRangeCardHTML({
+    team, season, lo, hi, maxWk, played, league,
+    active:_advWeekRangeActive(team), loading:!!_advWeeklySeedLoading,
+    idPrefix:'adv-wr',
+    onDrag:(which)=>`advWeekRangeDrag('${team}','${which}',this.value)`,
+    onCommit:`advWeekRangeCommit('${team}')`,
+    onReset:`advWeekRangeReset('${escJsSingle(team)}')`,
+    rail,
+  });
 }
 
 function renderAdvLeagueWeekRange(){
-  return renderAdvWeekRange(ADV_LEAGUE_RANGE_KEY, {
-    showOppRail:false,
-    extraRailHTML:(typeof renderWeekNumberRail==='function') ? renderWeekNumberRail('wr-week-adv') : '',
-    title:'League-wide advanced week range:',
-    summaryHint:'Windowed recompute applies to all 32 teams on the selected table (same season, weeks only).'
-  });
+  return renderAdvWeekRange(ADV_LEAGUE_RANGE_KEY, { showOppRail:false });
 }
 
 // Projected-season OL overall-score chip shown next to the OL Pass / OL Run block titles.
@@ -946,11 +947,11 @@ const ADV_POWER_SPECS = [
   { key:'points_allowed_pg',       label:'Points Allowed',              lowerBetter:true  },
 ];
 var _advPowerMemo = {};
-function advPowerTable(season, lo, hi){
+function advPowerTable(season, lo, hi, weeks){
   season = String(season);
   const pack = (NFLVERSE && NFLVERSE[season] && NFLVERSE[season].adv_weekly) || null;
   if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols)) return null;
-  const key = `${season}:${lo}-${hi}:${pack.weeks.length}:${Object.keys(pack.teams).length}`;
+  const key = `${season}:${lo}-${hi}${_advWeeksKey(weeks)}:${pack.weeks.length}:${Object.keys(pack.teams).length}`;
   if(_advPowerMemo[key]) return _advPowerMemo[key];
   const need = ['off_pass_epa','off_pass_plays','off_run_epa','off_run_plays',
                 'def_pass_epa_allowed','def_pass_plays','def_run_epa_allowed','def_run_plays','pace_games'];
@@ -961,8 +962,8 @@ function advPowerTable(season, lo, hi){
   ci.pts = actual ? pack.cols.indexOf('off_pts') : pack.cols.indexOf('off_drive_pts');
   ci.allowed = actual ? pack.cols.indexOf('def_pts_allowed') : pack.cols.indexOf('def_drive_pts_allowed');
   if(ci.pts<0 || ci.allowed<0) return null;
-  const weekIdx=[];
-  pack.weeks.forEach((w,i)=>{ w=Number(w); if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i); });
+  const weekIdx=[]; const keep=_advWeekKeep(lo, hi, weeks);
+  pack.weeks.forEach((w,i)=>{ if(keep(Number(w))) weekIdx.push(i); });
   if(!weekIdx.length) return null;
   const metrics={};
   Object.keys(pack.teams).forEach(tm=>{
@@ -994,10 +995,11 @@ function advPowerTable(season, lo, hi){
   return out;
 }
 // Week-by-week trajectory: the league rank after each week in the range (season to date).
-function advPowerTrajectory(season, lo, hi){
-  const full=advPowerTable(season, lo, hi); if(!full) return null;
+function advPowerTrajectory(season, lo, hi, weeks){
+  const full=advPowerTable(season, lo, hi, weeks); if(!full) return null;
   const out={};
-  full.weeks.forEach(w=>{ const t=advPowerTable(season, lo, w); if(!t) return;
+  // the rank after each week of the window: with picks, after each picked week in turn
+  full.weeks.forEach(w=>{ const t=advPowerTable(season, lo, w, (weeks&&weeks.size)?new Set([...weeks].filter(x=>x<=w)):null); if(!t) return;
     t.rows.forEach(r=>{ (out[r.team]=out[r.team]||[]).push({week:w, rank:r.leagueRank, avg:r.avg}); }); });
   return out;
 }
@@ -1057,7 +1059,7 @@ function _advTeamPowerScore(team, src, opts){
   };
   if(o.stableFromSource) return fallbackFromSrc();
   const [lo, hi] = _advGetWeekRange(team);
-  const tbl = advPowerTable(season, lo, hi);
+  const tbl = advPowerTable(season, lo, hi, _advWeekPicks(team));
   if(!tbl){
     // A season nflverse covers just hasn't loaded its adv_weekly yet: kick it and show nothing
     // until the real six-metric score lands, rather than the misleading Sharp-table average.

@@ -13,13 +13,17 @@ const app=new Function(code+`
   sleeperFetch=async(url)=>{ throw new Error('offline'); };
   hasSeasonStarted=()=>true; TC_SEASON.year=2026; TC_SEASON.phase='regular'; TC_SEASON.week=2; activeSeason='2026';
   const board=(teams)=>{ _tcBoard={season:'2026',week:2,at:Date.now(),teams,busy:false,live:Object.values(teams).some(t=>t.state==='in')}; };
+  let _applied=null;
   return { board, played:tcSeasonPlayedWeek, max:tcSeasonMaxWeek, numRail:renderWeekNumberRail, setWeek:(w)=>{ TC_SEASON.week=w; _tcBoard.week=w; },
     parse:_parseWeeklySchedule, rail:(team,cls)=>renderWeekOpponentRail(team,'2026',cls), setSched:(m)=>{ _weeklyOppBySeason['2026']=m; }, setProj:(t,st)=>{ userProj[t]=st; }, picks:weekPicks, chips:(t)=>weekPickChipsHTML(t,'2026'), sumR:sumWeeklyRange, sumQ:sumWeeklyRangeQB,
     oppRail:(team)=>{ _weeklyOppBySeason['2026']={[team]:{1:{opp:'GB',home:true},2:{opp:'CHI',home:false},3:{opp:'BAL',home:true}}}; return renderWeekOpponentRail(team,'2026'); },
     advCard:(team)=>{ _advWeeklySeedReady=true; _advSeasonCanRange=()=>true; _advEnsureWeeklyLoaded=()=>{}; advTeamSeason=()=>'2026'; return renderAdvWeekRange(team,{showOppRail:false}); },
     advDrag:(team,which,v)=>{ advWeekRangeDrag(team,which,v); return document.getElementById('adv-wr-hi-'+team).textContent+'|'+document.getElementById('adv-wr-lo-'+team).textContent; },
     card:(team)=>{ activeSeason='2026'; getSharedWeekRange=()=>[1,18]; isWeekFilterActive=()=>false; return weekRangeSliderHTML(team, userProj[team]); },
-    tap:weekCardTap, ensure:ensureWeeklyOppSchedule, noRender:()=>{ renderContent=()=>{}; } };
+    tap:weekCardTap, ensure:ensureWeeklyOppSchedule, noRender:()=>{ renderContent=()=>{}; },
+    toggle:weekPickToggle, clear:weekPickClear, picksOf:(t,s)=>[...weekPicks(t,s)].sort((a,b)=>a-b), sharedRange:getSharedWeekRange, clickOff:weekPickClickOff,
+    numRailPick:(s)=>renderWeekNumberRail('wr-week-adv',{pickTeam:ADV_LEAGUE_RANGE_KEY, season:s}), advCardPicks:(team)=>{ _advWeeklySeedReady=true; _advSeasonCanRange=()=>true; _advEnsureWeeklyLoaded=()=>{}; advTeamSeason=()=>'2026'; return renderAdvWeekRange(team); },
+    applied:()=>_applied, stubApply:()=>{ applyWeekRange=(t,lo,hi,w)=>{ _applied={t,lo,hi,w:w?[...w]:null}; }; resetWeekRange=(t)=>{ _applied={t,reset:true}; }; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 console.log('=== the week a team has played through ===');
@@ -53,25 +57,50 @@ chk(m && m.CIN[1].res==='W' && m.CIN[1].pf===27 && m.CIN[1].pa===24 && m.CIN[2].
 app.setSched(m); app.setWeek(4);
 app.setProj('CIN', {weekPick:[2], rushing:{}, passing_shares:null});
 const r=app.rail('CIN','wr-opp-main');
-chk(/wr-pickable[^"]*wr-picked wr-res-W[^>]*onclick="weekPickToggle\('CIN',2,event\)"/.test(r) && /<span class="wr-res wr-res-badge" aria-label="Win">W<\/span>/.test(r), 'the picked game wears its result — a W badge on the logo’s corner — and a tap drops it');
-chk(/wr-pickable wr-dim[^>]*onclick="weekPickToggle\('CIN',1,event\)"/.test(r), 'the other played games dim while a pick is on, and stay a tap');
-chk((r.match(/wr-res-badge/g)||[]).length===2 && (r.match(/wr-res-[WLT]/g)||[]).length===2 && /wr-pickable wr-dim wr-res-W[^>]*onclick="weekPickToggle\('CIN',1,event\)"/.test(r) && /wr-pickable wr-dim"[^>]*onclick="weekPickToggle\('CIN',3,event\)"/.test(r), 'every scored game wears its W or L, picked or not — the record reads at a glance; a game without a score yet wears none');
+chk(/wr-pickable[^"]*wr-picked wr-res-W[^>]*onclick="weekPickToggle\('CIN',2,event,'2026'\)"/.test(r) && /<span class="wr-res wr-res-badge" aria-label="Win">W<\/span>/.test(r), 'the picked game wears its result — a W badge on the logo’s corner — and a tap drops it');
+chk(/wr-pickable wr-dim[^>]*onclick="weekPickToggle\('CIN',1,event,'2026'\)"/.test(r), 'the other played games dim while a pick is on, and stay a tap');
+chk((r.match(/wr-res-badge/g)||[]).length===2 && (r.match(/wr-res-[WLT]/g)||[]).length===2 && /wr-pickable wr-dim wr-res-W[^>]*onclick="weekPickToggle\('CIN',1,event,'2026'\)"/.test(r) && /wr-pickable wr-dim"[^>]*onclick="weekPickToggle\('CIN',3,event,'2026'\)"/.test(r), 'every scored game wears its W or L, picked or not — the record reads at a glance; a game without a score yet wears none');
 chk(!/weekPickToggle\('CIN',3/.test(r) || /wr-pickable[^>]*weekPickToggle\('CIN',3/.test(r), 'week 3 (played, no score yet) is still pickable');
-chk(!/weekPickToggle/.test(app.rail('CIN','wr-opp-adv')), 'the Adv Metrics rail keeps its own week range: no taps there');
+chk(/wr-pickable[^"]*wr-picked wr-res-W[^>]*onclick="weekPickToggle\('CIN',2,event,'2026'\)"/.test(app.rail('CIN','wr-opp-adv')), 'the Adv Metrics rail is the same picker on the same pick: week 2 rings there too');
 app.setProj('CIN', {weekPick:null, rushing:{}});
-chk(!/wr-dim|wr-picked/.test(app.rail('CIN','wr-opp-main')) && /weekPickToggle\('CIN',1,event\)/.test(app.rail('CIN','wr-opp-main')), 'no pick: nothing dimmed, every played game a tap');
+chk(!/wr-dim|wr-picked/.test(app.rail('CIN','wr-opp-main')) && /weekPickToggle\('CIN',1,event,'2026'\)/.test(app.rail('CIN','wr-opp-main')), 'no pick: nothing dimmed, every played game a tap');
 chk((app.rail('CIN','wr-opp-main').match(/wr-res-badge/g)||[]).length>=2 && /wr-pickable wr-res-[WLT]/.test(app.rail('CIN','wr-opp-main')), 'no pick: the badges are still there');
 const wk={1:{team:'CIN',stats:{rec:3,rec_yd:30,gp:1}}, 2:{team:'CIN',stats:{rec:5,rec_yd:50,gp:1}}, 3:{team:'CIN',stats:{rec:7,rec_yd:70,gp:1}}};
 chk(app.sumR(wk,'CIN',1,3).receptions===15 && app.sumR(wk,'CIN',1,3,new Set([1,3])).receptions===10 && app.sumR(wk,'CIN',1,3,new Set([1,3])).games_played===2, 'a set of weeks filters the span to the picked games (1 and 3 of 1–3)');
 chk(app.sumQ({1:{team:'CIN',stats:{pass_yd:200,gp:1}},2:{team:'CIN',stats:{pass_yd:300,gp:1}}},'CIN',1,2,new Set([2])).pass_yards===300, 'the quarterback sum takes the same set');
 app.setProj('CIN', {weekPick:[1], rushing:{}});
 const ch=app.chips('CIN');
-chk((ch.match(/class="wr-chip[ "]/g)||[]).length===4 && /wr-chip wr-picked wr-res-W[^>]*onclick="weekPickToggle\('CIN',1,event\)"/.test(ch) && /wr-chip-clear/.test(ch), 'the phone\'s chips: one per played game, the picked one lit with its result, and a clear chip while a pick is on');
+chk((ch.match(/class="wr-chip[ "]/g)||[]).length===4 && /wr-chip wr-picked wr-res-W[^>]*onclick="weekPickToggle\('CIN',1,event,'2026'\)"/.test(ch) && /wr-chip-clear/.test(ch), 'the phone\'s chips: one per played game, the picked one lit with its result, and a clear chip while a pick is on');
 chk((ch.match(/class="wr-chip wr-res-W"/g)||[]).length===1 && (ch.match(/class="wr-chip"/g)||[]).length===1, 'the other chips carry their W or L too, unlit; the unscored game’s chip has none');
 (async()=>{
+
+console.log('=== one pick, every card: the projections tabs, the Adv Metrics card, the league-wide card ===');
+app.stubApply(); app.setProj('CIN', {weekPick:null, rushing:{}, passing_shares:null});
+app.toggle('CIN', 2, null, '2026');
+chk(app.picksOf('CIN','2026').join()==='2' && app.sharedRange('CIN','2026').join()==='2,2' && app.applied() && app.applied().t==='CIN' && app.applied().w.join()==='2', 'a tap on the rail picks week 2 for CIN in 2026: the shared store, the shared range and the projections data all follow');
+chk(/wr-picked wr-res-W[^>]*weekPickToggle\('CIN',2,event,'2026'\)/.test(app.rail('CIN','wr-opp-main')) && /wr-picked wr-res-W[^>]*weekPickToggle\('CIN',2,event,'2026'\)/.test(app.rail('CIN','wr-opp-adv')), 'the projections rail and the Adv Metrics rail both ring week 2 — switching tabs keeps the pick');
+const ac=app.advCardPicks('CIN');
+chk(/<div class="week-range-card" data-wr-team="CIN" data-wr-season="2026" onclick="weekCardTap\(event\)"/.test(ac) && !/adv-week-range-card/.test(ac) && /Picked game: <b>wk 2<\/b> · click off to clear/.test(ac) && /wr-chips/.test(ac) && /wr-more/.test(ac) && /or tap a game below/.test(ac)===false, 'the Adv Metrics card IS the projections card — one builder, one class — with team and season on it, the picked line, the chips, the fold toggle (the hint gives way to Reset while a pick is on)');
+app.toggle('CIN', 2, null, '2026');
+chk(app.picksOf('CIN','2026').length===0 && app.applied() && app.applied().reset===true, 'tapping the picked game again drops it and the projections data resets');
+app.toggle('CIN', 1, null, '2025');
+chk(app.picksOf('CIN','2025').join()==='1' && app.picksOf('CIN','2026').length===0 && !(app.applied() && app.applied().t==='CIN' && app.applied().w && app.applied().w.join()==='1'), 'a pick on a past season’s Adv card is its own: shared by season, never applied to this season’s projections');
+app.clear('CIN','2025');
+const lr=app.numRailPick('2026');
+chk((lr.match(/wr-pickable/g)||[]).length===4 && /wr-week-cell wr-week-bottom wr-pickable"[^>]*onclick="weekPickToggle\('__LEAGUE__',1,event,'2026'\)"/.test(lr) && !/wr-dim/.test(lr), 'the league-wide card’s week numbers are taps for the played weeks (1–4 by now), none dimmed before a pick');
+app.toggle('__LEAGUE__', 1, null, '2026');
+const lr2=app.numRailPick('2026');
+chk(/wr-week-cell wr-week-bottom wr-pickable wr-picked"[^>]*weekPickToggle\('__LEAGUE__',1/.test(lr2) && /wr-week-cell wr-week-top wr-pickable wr-dim"[^>]*weekPickToggle\('__LEAGUE__',2/.test(lr2) && app.sharedRange('__LEAGUE__','2026').join()==='1,1', 'a tap on week 1 rings it, dims week 2 and narrows the league-wide range to that week');
+chk(/<b>1<\/b> wk/.test(app.chips('__LEAGUE__')) || /<b>1<\/b> wk/.test(app.chips('__LEAGUE__','2026')), 'the league card’s phone chips are week numbers');
+app.clear('__LEAGUE__','2026');
+chk(app.picksOf('__LEAGUE__','2026').length===0 && app.sharedRange('__LEAGUE__','2026').join()==='1,18', 'clearing the league pick restores the full season');
+app.toggle('CIN', 2, null, '2026');
+const kept=app.clickOff({target:{closest:(sel)=>/button/.test(sel)?{}:null}});
+chk(!kept && app.picksOf('CIN','2026').join()==='2', 'a click on a tab or a button is not a click off: the pick survives a walk to another tab');
+app.clear('CIN','2026');
 console.log('=== the phone card: compact until a tap opens the chips ===');
 let cd=app.card('CIN');
-chk(/<div class="week-range-card" onclick="weekCardTap\(event\)">/.test(cd) && /week-range-hint week-range-help/.test(cd) && /<span class="wr-more" aria-hidden="true">games ▾<\/span>/.test(cd) && /wr-chips/.test(cd), 'the card is a tap; closed it says "games ▾", the long hint and the chips are there for CSS to hide on a phone');
+chk(/<div class="week-range-card" data-wr-team="CIN" data-wr-season="2026" onclick="weekCardTap\(event\)">/.test(cd) && /week-range-hint week-range-help/.test(cd) && /<span class="wr-more" aria-hidden="true">games ▾<\/span>/.test(cd) && /wr-chips/.test(cd), 'the card is a tap; closed it says "games ▾", the long hint and the chips are there for CSS to hide on a phone');
 const fakeCard={on:false, classList:{contains(){ return fakeCard.on; }, toggle(c,v){ fakeCard.on=v; }}, querySelector:()=>fakeCard.more, more:{textContent:''}};
 const mk=(hit)=>({target:{closest:(sel)=>hit && sel.indexOf(hit)>=0 ? fakeCard : (sel==='.week-range-card'?fakeCard:null)}});
 app.tap(mk('.wr-chip'));

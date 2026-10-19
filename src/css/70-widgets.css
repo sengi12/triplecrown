@@ -54,6 +54,12 @@
 .wr-week-top .wr-week-stem{top:18px;height:5px;}
 .wr-week-bottom .wr-week-stem{top:-5px;height:5px;}
 .wr-week-num{font-size:10px;color:var(--text);font-weight:800;}
+/* the league-wide card's week numbers are its picker: the same ring, the same dimming */
+.wr-week-cell.wr-pickable{pointer-events:auto;cursor:pointer;border-radius:8px;padding:1px 4px;}
+.wr-week-cell.wr-pickable:hover{background:rgba(255,255,255,.06);}
+.wr-week-cell.wr-dim{opacity:.45;}
+.wr-week-cell.wr-picked{--pick:var(--accent);box-shadow:0 0 0 2px var(--pick);background:color-mix(in srgb,var(--pick) 18%,transparent);opacity:1;}
+.wr-week-cell.wr-picked .wr-week-num{color:var(--accent);}
 
 /* ── Roster tracker (pinned bottom bar + expandable panel) ── */
 .rt-bar-host{position:fixed;left:0;right:0;bottom:0;z-index:900;pointer-events:none;
