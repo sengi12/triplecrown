@@ -7130,7 +7130,22 @@ function gcWinProbTap(ev, eid){
     // painted in place, not through the pane's repaint: that one waits for the finger to
     // lift, and a drag across the chart should read as it goes
     gcWinProbPaintPick(rect.closest('.gc-wp'), eid);
+    // and the field jumps to the play: the drive up to it, the play itself drawn — the
+    // same pin a tap on the feed makes (the pane repaints when the finger lifts)
+    gcWinProbJump(eid, i);
+    if(ev.type==='pointerdown'){ try{ const fld=rect.closest('.gc-detail, .gcm-sheet, body').querySelector('.gc-drive'); if(fld && fld.scrollIntoView) fld.scrollIntoView({block:'nearest', behavior:'smooth'}); }catch(e){} }
   }catch(e){}
+}
+// Pin the field to the play behind point i — only when that play is in a drive the chart can
+// draw; a point ESPN gave no play for leaves the field where it is.
+function gcWinProbJump(eid, i){
+  const ix=_gcd.wpPts && _gcd.wpPts[String(eid)]; const pt=ix && ix.pts[Number(i)]; if(!pt || !pt.pid) return false;
+  const c=_gcd.sum && _gcd.sum[String(eid)]; const sum=c && c.data; if(!sum) return false;
+  if(!gcReplayDrive(sum, pt.pid)) return false;
+  _gcd.replay={ eid:String(eid), playId:String(pt.pid) };
+  if(_gcd.driveSeen) delete _gcd.driveSeen[String(eid)];
+  gcDetailRepaint();
+  return true;
 }
 function gcWinProbPaintPick(wrap, eid){
   if(!wrap) return;
@@ -7149,6 +7164,8 @@ function gcWinProbPaintPick(wrap, eid){
 function gcWinProbClose(ev, eid){
   try{ if(ev && ev.stopPropagation) ev.stopPropagation(); }catch(e){}
   if(_gcd.wpPick) delete _gcd.wpPick[String(eid)];
+  // the field comes back to the live (or latest) drive with the bubble
+  if(_gcd.replay && String(_gcd.replay.eid)===String(eid)){ _gcd.replay=null; gcDetailRepaint(); }
   try{
     const hit=document.querySelector(`.gc-wp-hit[onpointerdown*="'${String(eid)}'"]`);
     gcWinProbPaintPick(hit ? hit.closest('.gc-wp') : null, eid);
