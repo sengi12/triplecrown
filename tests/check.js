@@ -5429,7 +5429,7 @@ function gcGameHTML(game, rows, wk){
   // scroll in their own window — so a play tapped for replay keeps animating in view (CSS
   // turns this off inside the phone's bottom sheet, where the whole sheet scrolls).
   const winbar=(typeof gcWinBarHTML==='function') ? gcWinBarHTML(game, sum) : '';
-  if(tab==='feed') return `<div class="gc-feedview"><div class="gc-feedview-head">${hero}${oddsHtml}${top}${tabs}</div><div class="gc-feedview-feed">${gcFeedHTML(game, sum)}${winbar}</div></div>`;
+  if(tab==='feed') return `<div class="gc-feedview${_gcd.condensed?' gc-condensed':''}"><div class="gc-feedview-head">${hero}${oddsHtml}${top}${tabs}</div><div class="gc-feedview-feed" onscroll="gcFeedScrolled(this)">${gcFeedHTML(game, sum)}${winbar}</div></div>`;
   const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.away))}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.home))}</button></div>`;
   const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
   return hero+oddsHtml+top+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
@@ -5819,6 +5819,83 @@ function renderGamesPhone(fromLoad){
     _gcm.timer=window.setTimeout(()=>{ _gcm.timer=null; if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', renderGamesPhone); else renderGamesPhone(); }, 61*1000);
   }
 }
+
+// ── The balance between the pinned field and the scrolling plays ───────────────────
+// On the sidebar's feed the hero, the field and the win probability stay put while the plays
+// scroll underneath. Pinned at full height they left the plays two rows of room. So the
+// block CONDENSES the moment the feed is scrolled — the hero to one slim line, the last-play
+// text, the odds, the drive sentence and the win-probability chart folded away, the field
+// kept — and opens back up at the top of the feed. A pane too short to give the plays a fair
+// window starts condensed. The flag lives in _gcd so a repaint keeps the state; the class is
+// toggled in place so a scroll never costs a repaint.
+const GC_FEED_MIN_SHARE=0.42;   // the plays deserve at least this much of the pane when open
+function gcFeedScrolled(el){
+  try{
+    if(!el) return;
+    const y=el.scrollTop||0;
+    if(y>28 && !_gcd.condensed) gcFeedCondense(true, el);
+    else if(y<6 && _gcd.condensed && !_gcd.condensedShort) gcFeedCondense(false, el);
+  }catch(e){}
+}
+function gcFeedCondense(on, feedEl){
+  _gcd.condensed=!!on;
+  const fv=feedEl ? feedEl.closest('.gc-feedview') : document.querySelector('.gc-feedview');
+  if(fv && fv.classList) fv.classList.toggle('gc-condensed', !!on);
+}
+// After a paint: if the open block leaves the plays under their share of the pane, condense
+// from the start (and remember it was the pane's height, not a scroll, that did it).
+function gcFeedBalance(){
+  try{
+    const fv=document.querySelector('.gc-detail .gc-feedview'); if(!fv) return;
+    const feed=fv.querySelector('.gc-feedview-feed'), det=fv.closest('.gc-detail'); if(!feed || !det) return;
+    if(window.getComputedStyle && window.getComputedStyle(feed).overflowY!=='auto') return;   // the phone sheet scrolls as one page
+    const share=feed.clientHeight/Math.max(1, det.clientHeight);
+    if(!_gcd.condensed && share<GC_FEED_MIN_SHARE){ _gcd.condensedShort=true; gcFeedCondense(true, feed); }
+    else if(_gcd.condensedShort && _gcd.condensed && feed.scrollTop<6){
+      // would there be room if it opened? measure by opening for a frame
+      fv.classList.remove('gc-condensed');
+      const openShare=feed.clientHeight/Math.max(1, det.clientHeight);
+      if(openShare>=GC_FEED_MIN_SHARE){ _gcd.condensedShort=false; _gcd.condensed=false; }
+      else fv.classList.add('gc-condensed');
+    }
+  }catch(e){}
+}
+// The phone: the whole page (or the sheet's body) scrolls and the block is sticky, so the
+// scroll to watch is that scroller's. The signal is the feed view's own top passing the
+// scroller's top — not an inner scrollTop — which holds whatever sits above it.
+function gcFeedWatchScroll(scroller){
+  try{
+    const fv=document.querySelector('.gc-feedview'); if(!fv) return;
+    const feed=fv.querySelector('.gc-feedview-feed');
+    if(feed && window.getComputedStyle && window.getComputedStyle(feed).overflowY==='auto') return;   // the desktop window has its own handler
+    const isWin=(scroller===window || !scroller || !scroller.getBoundingClientRect);
+    const top0=isWin ? 0 : scroller.getBoundingClientRect().top;
+    const y=top0 - fv.getBoundingClientRect().top;
+    if(y>28 && !_gcd.condensed){ gcFeedCondense(true, feed); if(isWin) gcFeedPin(fv, true); }
+    else if(y<6 && _gcd.condensed){ _gcd.condensedShort=false; gcFeedCondense(false, feed); if(isWin) gcFeedPin(fv, false); }
+    else if(isWin && _gcd.condensed) gcFeedPin(fv, true);   // a repaint dropped the inline pin: put it back
+  }catch(e){}
+}
+// The full-page Games view scrolls the window, but the page's content column is an
+// overflow:auto box that never scrolls itself — which is exactly the ancestor that breaks
+// position:sticky. So on the window the block is pinned by hand: fixed to the top, the
+// feed view padded by the block's height so the plays do not jump up under it.
+function gcFeedPin(fv, on){
+  const head=fv.querySelector('.gc-feedview-head'); if(!head) return;
+  if(!on){ head.style.position=''; head.style.top=''; head.style.left=''; head.style.width=''; head.style.zIndex=''; fv.style.paddingTop=''; fv.classList.remove('gc-pinned'); return; }
+  if(fv.classList.contains('gc-pinned') && head.style.position==='fixed') return;
+  const r=fv.getBoundingClientRect();
+  fv.classList.add('gc-pinned');
+  head.style.position='fixed'; head.style.top='0px'; head.style.left=r.left+'px'; head.style.width=r.width+'px'; head.style.zIndex='30';
+  fv.style.paddingTop=head.getBoundingClientRect().height+'px';
+}
+if(typeof window!=='undefined' && window.addEventListener){
+  window.addEventListener('resize', ()=>{ try{ if(window.requestAnimationFrame) window.requestAnimationFrame(gcFeedBalance); else gcFeedBalance(); }catch(e){} });
+  window.addEventListener('scroll', ()=>gcFeedWatchScroll(window), {passive:true});
+}
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('scroll', (e)=>{ const t=e.target; if(t && t.classList && t.classList.contains('gc-body')) gcFeedWatchScroll(t); }, true);
+}
 // ═════════════════════════════════════════════════════════════════════════════
 // Game detail — the play feed, the quarter line, the box score, the fantasy pane
 // ═════════════════════════════════════════════════════════════════════════════
@@ -5941,7 +6018,7 @@ function gcSummaryRepaint(added){
 }
 function gcDetailRepaint(){
   if(typeof renderRightSidebar!=='function') return;
-  const paint=()=>{ if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.gc-feedview-feed','.gc-detail','.gcm-sheet','.gc-body']); else renderRightSidebar(); };
+  const paint=()=>{ gcDetailPaintNow(); if(typeof gcFeedBalance==='function'){ if(window.requestAnimationFrame) window.requestAnimationFrame(gcFeedBalance); else gcFeedBalance(); } };
   if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', paint); else paint();   // never under a finger or an open picker
 }
 function gcdSetTab(t){ _gcd.tab=t; gcDetailRepaint(); }
@@ -5955,7 +6032,33 @@ function gcReplayPlay(eid, playId){
   if(!eid || !playId) return;
   _gcd.replay={ eid:String(eid), playId:String(playId) };
   if(_gcd.driveSeen) delete _gcd.driveSeen[String(eid)];
-  gcDetailRepaint();
+  // Paint NOW, not when the finger lifts (the idle gate held the replay until the tap ended,
+  // and a second tap on the play already on the field changed no markup at all, so the morph
+  // left the old animation where it was). Then rewind the field's SVG clock so the segment
+  // draws and the ball travels every time, and bring the field into view where it scrolls.
+  gcDetailPaintNow();
+  gcFieldReplayKick();
+}
+function gcDetailPaintNow(){
+  if(typeof renderRightSidebar!=='function') return;
+  const y=(typeof window!=='undefined' && window.scrollY)||0;
+  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.gc-feedview-feed','.gc-detail','.gcm-sheet','.gc-body']); else renderRightSidebar();
+  // the phone's hand-pinned block loses its inline pin to the morph: put it back in the same
+  // frame and hold the page where it was, or the plays jump up under the finger
+  if(_gcd.condensed && typeof gcFeedWatchScroll==='function'){
+    try{ if(window.scrollTo && Math.abs((window.scrollY||0)-y)>4) window.scrollTo(0, y); gcFeedWatchScroll(window); }catch(e){}
+  }
+}
+function gcFieldReplayKick(){
+  const go=()=>{ try{
+    const svg=document.querySelector('.gc-drive-svg');
+    if(svg && typeof svg.setCurrentTime==='function') svg.setCurrentTime(0);
+    // bring the field into view only when it is actually out of it — pinned (desktop window,
+    // phone fixed/sticky block) it already shows, and a scroll would yank the plays away
+    const fld=document.querySelector('.gc-drive');
+    if(fld && fld.scrollIntoView && fld.getBoundingClientRect){ const r=fld.getBoundingClientRect(); const vh=(typeof window!=='undefined' && window.innerHeight)||800; if(r.bottom<0 || r.top>vh) fld.scrollIntoView({block:'nearest', behavior:'smooth'}); }
+  }catch(e){} };
+  if(window.requestAnimationFrame) window.requestAnimationFrame(go); else go();
 }
 function gcReplayClear(){ _gcd.replay=null; gcDetailRepaint(); }
 

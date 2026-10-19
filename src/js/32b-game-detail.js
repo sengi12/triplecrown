@@ -120,7 +120,7 @@ function gcSummaryRepaint(added){
 }
 function gcDetailRepaint(){
   if(typeof renderRightSidebar!=='function') return;
-  const paint=()=>{ if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.gc-feedview-feed','.gc-detail','.gcm-sheet','.gc-body']); else renderRightSidebar(); };
+  const paint=()=>{ gcDetailPaintNow(); if(typeof gcFeedBalance==='function'){ if(window.requestAnimationFrame) window.requestAnimationFrame(gcFeedBalance); else gcFeedBalance(); } };
   if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', paint); else paint();   // never under a finger or an open picker
 }
 function gcdSetTab(t){ _gcd.tab=t; gcDetailRepaint(); }
@@ -134,7 +134,33 @@ function gcReplayPlay(eid, playId){
   if(!eid || !playId) return;
   _gcd.replay={ eid:String(eid), playId:String(playId) };
   if(_gcd.driveSeen) delete _gcd.driveSeen[String(eid)];
-  gcDetailRepaint();
+  // Paint NOW, not when the finger lifts (the idle gate held the replay until the tap ended,
+  // and a second tap on the play already on the field changed no markup at all, so the morph
+  // left the old animation where it was). Then rewind the field's SVG clock so the segment
+  // draws and the ball travels every time, and bring the field into view where it scrolls.
+  gcDetailPaintNow();
+  gcFieldReplayKick();
+}
+function gcDetailPaintNow(){
+  if(typeof renderRightSidebar!=='function') return;
+  const y=(typeof window!=='undefined' && window.scrollY)||0;
+  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.gc-feedview-feed','.gc-detail','.gcm-sheet','.gc-body']); else renderRightSidebar();
+  // the phone's hand-pinned block loses its inline pin to the morph: put it back in the same
+  // frame and hold the page where it was, or the plays jump up under the finger
+  if(_gcd.condensed && typeof gcFeedWatchScroll==='function'){
+    try{ if(window.scrollTo && Math.abs((window.scrollY||0)-y)>4) window.scrollTo(0, y); gcFeedWatchScroll(window); }catch(e){}
+  }
+}
+function gcFieldReplayKick(){
+  const go=()=>{ try{
+    const svg=document.querySelector('.gc-drive-svg');
+    if(svg && typeof svg.setCurrentTime==='function') svg.setCurrentTime(0);
+    // bring the field into view only when it is actually out of it — pinned (desktop window,
+    // phone fixed/sticky block) it already shows, and a scroll would yank the plays away
+    const fld=document.querySelector('.gc-drive');
+    if(fld && fld.scrollIntoView && fld.getBoundingClientRect){ const r=fld.getBoundingClientRect(); const vh=(typeof window!=='undefined' && window.innerHeight)||800; if(r.bottom<0 || r.top>vh) fld.scrollIntoView({block:'nearest', behavior:'smooth'}); }
+  }catch(e){} };
+  if(window.requestAnimationFrame) window.requestAnimationFrame(go); else go();
 }
 function gcReplayClear(){ _gcd.replay=null; gcDetailRepaint(); }
 

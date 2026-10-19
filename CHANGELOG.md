@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-19
 
+- feat(game-center): the pinned block over the plays condenses the moment the feed is scrolled — a slim score line, the field, the win-probability line and the tabs stay, the rest folds — on the desktop sidebar and pinned to the top of the phone's page alike, and a tapped play paints at once and always animates (#196)
 - fix(team): with a week range or picked games on, the rank chips rank against the league over the same weeks — a window pool built from Sleeper's week stats for every skill player — instead of against season totals, which read a one-week total as last of all (#195)
 - feat(game-center): a tap on the win probability line also jumps the field to that play — the drive up to it, the play drawn, the Replay tag — and closing the bubble hands the field back (#194)
 - feat(game-center): tap or drag the win probability line and a bubble names the play behind that point — quarter and clock, the score as it stood, the play, the favoured side's chance and the move from the play before (#193)
