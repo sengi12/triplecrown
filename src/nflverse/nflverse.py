@@ -3625,6 +3625,38 @@ def _pfr_to_gsis_map():
     return out
 
 
+def _def_pass_rush_rate(weeks, db_share, exact=None):
+    """Pressures per pass-rush snap, week by week, written onto `weeks` in place.
+
+    PFF and Next Gen judge a rusher by his rate, not his count; PFR's charting gives the
+    count, so the denominator is built here. A pass-rush snap is a dropback he was on the
+    field for: exact when nflverse's participation file carries the season (`exact` maps
+    (week) -> dropbacks on field for this player), estimated otherwise as his defensive
+    snaps × the share of his team's defensive plays that were dropbacks that week
+    (`db_share` maps (team, week) -> share). A week needs 5 such snaps and a charted
+    pressure count to get a rate. Returns (pressures, pass_snaps) summed over the weeks
+    that have both, for the season rate."""
+    sum_prs = sum_ps = 0.0
+    for w in weeks:
+        wk = int(w.get("week") or 0)
+        ps = None
+        if exact and wk in exact and exact[wk] is not None:
+            ps = float(exact[wk])
+        elif w.get("snaps") is not None:
+            share = db_share.get((str(w.get("team") or "").upper(), wk)) if db_share else None
+            if share is not None:
+                ps = float(w["snaps"]) * float(share)
+        if ps is None:
+            continue
+        w["pass_snaps"] = round(ps, 1)
+        prs = w.get("pressures")
+        if prs is not None and ps >= 5:
+            w["prs_rate"] = round(100.0 * float(prs) / ps, 1)
+            sum_prs += float(prs)
+            sum_ps += ps
+    return sum_prs, sum_ps
+
+
 def defensive_weekly_players(season):
     """Per-defender weekly logs (DL/LB/DB groups) for player-card use.
 
@@ -3799,7 +3831,7 @@ def defensive_weekly_players(season):
         "tackles_solo", "tfl", "pd", "ff", "def_td",
     ]
     mean_fields = ["rating_allowed", "adot", "missed_tackle_pct", "snap_pct"]
-    sum_fields = sum_fields + ["snaps"]
+    sum_fields = sum_fields + ["snaps", "pass_snaps"]
 
     # Compact encoding to keep the seed small (this table is the largest nflverse block):
     #   • drop the per-week `team` (identical to the player-level team; the card reader uses
@@ -3869,6 +3901,44 @@ def defensive_weekly_players(season):
     except Exception:
         pass
 
+    # ── Pressure rate: the denominator PFR does not give ────────────────────────
+    # The share of each defense's plays that were dropbacks, week by week (pbp), for the
+    # estimate; the participation file's defense_players for the exact count when the
+    # season has one (it posts after the season — in season this is a 404, and the
+    # estimate stands).
+    db_share = {}
+    try:
+        pb = _load_pbp(season, cols=["game_id", "play_id", "season_type", "week", "defteam", "qb_dropback", "play_type"])
+        pb = pb[(pb["season_type"] == "REG") & pb["play_type"].isin(["pass", "run", "qb_kneel", "qb_spike"])]
+        g = pb.groupby(["defteam", "week"])["qb_dropback"].agg(["size", "sum"])
+        for (tm, wk), r in g.iterrows():
+            if r["size"] > 0:
+                t = str(tm or "").upper()
+                db_share[(NFLVERSE_TO_SEED.get(t, t), int(wk))] = float(r["sum"]) / float(r["size"])
+    except Exception as e:
+        print(f"  (def pressure rate: no dropback share — {type(e).__name__})")
+    exact_ps = {}
+    try:
+        part = _aux_csv(PART_URL.format(season=season), usecols=["nflverse_game_id", "play_id", "defense_players"])
+        dbp = pb[pb["qb_dropback"] == 1][["game_id", "play_id", "week"]].merge(
+            part, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "play_id"], how="inner")
+        dbp = dbp[dbp["defense_players"].notna()]
+        for _, r in dbp.iterrows():
+            wk = int(r["week"])
+            for gid in str(r["defense_players"]).split(";"):
+                gid = gid.strip()
+                if gid:
+                    exact_ps.setdefault(gid, {}).setdefault(wk, 0)
+                    exact_ps[gid][wk] += 1
+    except Exception as e:
+        if not _is_http_not_found(e):
+            print(f"  (def pressure rate: no participation — {type(e).__name__})")
+
+    for key, d in out.items():
+        prs_sum, ps_sum = _def_pass_rush_rate(d["weeks"], db_share, exact_ps.get(d.get("_gsis")))
+        d["_prs_rate"] = round(100.0 * prs_sum / ps_sum, 1) if ps_sum >= 5 else None
+        d["_ps_exact"] = 1 if exact_ps.get(d.get("_gsis")) else None
+
     for key, d in out.items():
         # games = weeks PFR actually charted; gp = weeks he took a snap. They differ a lot for
         # run-stuffing interior linemen, which is the whole point of showing both.
@@ -3879,6 +3949,11 @@ def defensive_weekly_players(season):
         gp = d.pop("_gp", None) or len(d["weeks"])
         d.pop("_gsis", None)
         t = {"games": charted, "gp": gp}
+        prs_rate, ps_exact = d.pop("_prs_rate", None), d.pop("_ps_exact", None)
+        if prs_rate is not None:
+            t["prs_rate"] = prs_rate
+        if ps_exact:
+            t["ps_exact"] = 1
         for f in sum_fields:
             vals = [w.get(f) for w in d["weeks"] if w.get(f) is not None]
             t[f] = (None if not vals else round(float(sum(vals)), 2))

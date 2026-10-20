@@ -24090,8 +24090,12 @@ function _dwNum(v, dp=1, pct=false){
 // All values are PER GAME (one row = one week). `missed_tackle_pct` is compared AFTER the
 // 0-1 → 0-100 scaling below, so its thresholds are on a 0-100 scale like a human would read.
 // ═══════════════════════════════════════════════════════════════════════════
-function _dwCellClass(key, v){
+function _dwCellClass(key, v, group){
   if(v==null || Number.isNaN(v)) return '';
+  // pressures per pass-rush snap (PFR's count over the snaps he rushed): the 2026 league
+  // sits at ~5.7% median / 7.4% upper quartile for linemen, lower for the linebacker group
+  // that mixes edge rushers with off-ball players
+  if(key==='prs_rate') return group==='LB' ? _tri(v,7,4) : _tri(v,8,5.5);
   // missed_tackle_pct arrives as a fraction (0.125); compare on the same 0-100 scale we show.
   if(key==='missed_tackles') return _triLow(v,1,2);
   if(key==='missed_tackle_pct') return _triLow(v*100, 15, 25);
@@ -24128,7 +24132,7 @@ function _dwCols(group){
   if(group==='DL'){
     return [
       {k:'snap_pct', l:'SNP%', d:0, pct:true},
-      {k:'tackles', l:'TKL', d:0}, {k:'tfl', l:'TFL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
+      {k:'tackles', l:'TKL', d:0}, {k:'tfl', l:'TFL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1}, {k:'prs_rate', l:'PRS%', d:1, unit:'%'},
       {k:'hurries', l:'HUR', d:1}, {k:'qb_hits', l:'HIT', d:1}, {k:'blitzes', l:'BLZ', d:1}, {k:'ff', l:'FF', d:0},
       {k:'missed_tackles', l:'MISS', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
     ];
@@ -24136,7 +24140,7 @@ function _dwCols(group){
   if(group==='LB'){
     return [
       {k:'snap_pct', l:'SNP%', d:0, pct:true},
-      {k:'tackles', l:'TKL', d:0}, {k:'tfl', l:'TFL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
+      {k:'tackles', l:'TKL', d:0}, {k:'tfl', l:'TFL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1}, {k:'prs_rate', l:'PRS%', d:1, unit:'%'},
       {k:'blitzes', l:'BLZ', d:1}, {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMP', d:1},
       {k:'yds_allowed', l:'YDS', d:1}, {k:'pd', l:'PD', d:0}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG', d:1},
       {k:'ff', l:'FF', d:0}, {k:'missed_tackles', l:'MISS', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
@@ -24177,8 +24181,8 @@ function renderPcardDefWeekly(pid){
         : '–';
       const cells = cols.map(c=>{
         const v = w[c.k];
-        const cls = _dwCellClass(c.k, v);
-        const txt=v==null?'–':_dwNum(v, c.d, c.pct);
+        const cls = _dwCellClass(c.k, v, rec.group);
+        const txt=v==null?'–':_dwNum(v, c.d, c.pct)+(c.unit||'');
         return `<td class="pcard-cell ${cls}">${noteWrapHtml(escHtml(txt), { label:c.l, value:txt, source:'def_weekly', statKey:c.k, context:`${season} wk ${w.week||''} · ${w.opp?`vs ${w.opp}`:'—'}`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</td>`;
       }).join('');
       return `<tr><td class="pcard-wk">${w.week||''}</td><td class="pcard-opp home">${opp}</td>${cells}</tr>`;
@@ -24186,7 +24190,7 @@ function renderPcardDefWeekly(pid){
     const totals = rec.totals||{};
     const totCells = cols.map(c=>{
       const v=totals[c.k];
-      const txt=v==null?'–':_dwNum(v,c.d,c.pct);
+      const txt=v==null?'–':_dwNum(v,c.d,c.pct)+(c.unit||'');
       return `<td class="pcard-cell pcard-total-cell">${noteWrapHtml(escHtml(txt), { label:c.l, value:txt, source:'def_weekly_total', statKey:c.k, context:`${season} totals`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</td>`;
     }).join('');
     // games = weeks PFR charted; gp = weeks he actually took a snap. When they differ, say so:
@@ -24215,6 +24219,7 @@ function renderPcardDefWeekly(pid){
 TC_INFO_BOOK.def_weekly_src={title:'Defensive stats: the source', body:`
   <p>Every advanced column here — <b>PRS</b>, <b>HUR</b>, <b>HIT</b>, <b>BLZ</b>, the coverage columns, <b>MISS</b> — is <b>Pro Football Reference’s charting</b>, delivered through nflverse. Tackles, TFL, PD, FF and INT are the box score; snap share is the participation file.</p>
   <p><b>A pressure here is PFR’s pressure</b>: a hurry, a hit on the quarterback, or a sack, as PFR charts it. PRS is the sum of HUR, HIT and SACK. PFF and Next Gen Stats chart pressures by their own rules and routinely post two to three times PFR’s number for the same player — an edge rusher at 25 on PFF is often 8 to 10 here. Neither of those feeds is public, so the card carries PFR’s, and ranks and colours compare players on the same scale.</p>
+  <p><b>PRS%</b> is the rate those sites actually judge a rusher by: PFR’s pressures per pass-rush snap. A pass-rush snap is a dropback he was on the field for — counted exactly once nflverse’s participation file posts for the season, and until then estimated as his defensive snaps × the share of his team’s defensive plays that were dropbacks that week. A week needs 5 such snaps for a rate; the season rate pools the weeks. Among 2026 linemen the median is about 5.7% and the upper quarter 7.4%, so 8%+ reads green.</p>
   <p class="tc-info-sub">A week PFR has not charted yet shows blank advanced cells; the snap share still proves he played. PFR’s charting lands within a day or two of the game.</p>`};
 // ─────────────────────────────────────────────────────────────────────────────
 // Team defense (D/ST) player card. Team defenses aren't in the Sleeper player DB and have
