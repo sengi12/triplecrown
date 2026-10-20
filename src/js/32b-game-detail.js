@@ -123,7 +123,7 @@ function gcDetailRepaint(){
   const paint=()=>{ gcDetailPaintNow(); if(typeof gcFeedBalance==='function'){ if(window.requestAnimationFrame) window.requestAnimationFrame(gcFeedBalance); else gcFeedBalance(); } };
   if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', paint); else paint();   // never under a finger or an open picker
 }
-function gcdSetTab(t){ _gcd.tab=t; gcDetailRepaint(); }
+function gcdSetTab(t){ _gcd.tab=t; if(typeof gcFeedReset==='function') gcFeedReset(); gcDetailRepaint(); }
 function gcdSetSide(s){ _gcd.side=s; gcDetailRepaint(); }
 function gcdSetFeedAll(v){ _gcd.feedAll=!!v; gcDetailRepaint(); }
 function gcdTab(game){ return _gcd.tab || (game && game.state==='pre' ? 'stats' : 'feed'); }

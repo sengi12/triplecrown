@@ -5059,10 +5059,10 @@ function gcOpenLast(){
   let m=_gc.lastOpen; if(!m){ try{ m=localStorage.getItem('tc_rsb_open'); }catch(e){} }
   gcSetMode(m==='max' ? 'max' : 'normal');
 }
-function gcSetWeek(v){ _gc.week = v==='current' ? 'current' : Number(v); _gc.game=null; renderRightSidebar(); }
+function gcSetWeek(v){ _gc.week = v==='current' ? 'current' : Number(v); _gc.game=null; gcFeedReset(); renderRightSidebar(); }
 // Picking a game from the phone's half-open sheet also pulls the sheet up: the game list is
 // the half state's point, the picked game's lines are the full state's.
-function gcPick(id){ _gc.game=id; if(!gcInGamesView() && typeof _gcm!=='undefined' && _gcm.open==='half') _gcm.open='full'; renderRightSidebar(); }
+function gcPick(id){ _gc.game=id; gcFeedReset(); if(!gcInGamesView() && typeof _gcm!=='undefined' && _gcm.open==='half') _gcm.open='full'; renderRightSidebar(); }
 // "Now" is the tracker's week: the finished week holds through Tuesday and until Wednesday
 // 06:00 Eastern (tcTrackerWeek), so Tuesday's look still opens on everything that happened.
 function gcCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
@@ -5617,7 +5617,11 @@ function gcmHost(){
   }
   return el;
 }
-function gcmSet(v){ if(!GCM_OPEN.includes(v)) return; _gcm.open=v; renderGamesPhone(); }
+// The slide-up sheet is retired where the bottom bar has a Games tab: anything that used
+// to open the sheet opens that view instead. The sheet code stays as the fallback for a
+// layout without the tab.
+function gcmUseView(){ return gcPhoneOn() && typeof showGamesView==='function' && typeof currentPhase!=='undefined'; }
+function gcmSet(v){ if(!GCM_OPEN.includes(v)) return; if(v!=='closed' && gcmUseView()){ _gcm.open='closed'; showGamesView(); return; } _gcm.open=v; renderGamesPhone(); }
 // A horizontal swipe across the sheet: on the Games page it turns to the next or previous
 // game in kickoff order (past the last game → the Leaders page); on the Leaders page a
 // swipe right returns to the games. The rail (a scroller) and the grab handle keep their
@@ -5698,7 +5702,7 @@ function gcmBindSwipe(sheet){
   sheet.addEventListener('touchcancel', end, {passive:true});
 }
 // The picker bar's live line and the pill both open straight to a game.
-function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; if(gcInGamesView()){ renderGamesView(); return; } _gcm.open='full'; renderGamesPhone(); }
+function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; gcFeedReset(); if(gcInGamesView()){ renderGamesView(); return; } if(gcmUseView()){ _gcm.open='closed'; showGamesView(); return; } _gcm.open='full'; renderGamesPhone(); }
 // The mobile bottom bar's Games tab is a full top-level VIEW (like Projections / Rankings /
 // Leagues), rendered into #content — not the old slide-up sheet. These drive it.
 function gcInGamesView(){ return typeof currentPhase!=='undefined' && currentPhase==='Games'; }
@@ -5760,7 +5764,7 @@ function gcmCurrentGames(){
 // The sheet's two pages: the week's games, and the Leaders — the same ranked list the
 // desktop sidebar shows (weekly high scores by position, sortable), in the phone's drawer.
 const GCM_TABS=[['games','Games'],['leaders','Leaders']];
-function gcmSetTab(t){ if(!GCM_TABS.some(x=>x[0]===t)) return; _gcm.tab=t; if(!gcInGamesView() && _gcm.open==='closed') _gcm.open='half'; gcSheetRepaint(); }
+function gcmSetTab(t){ if(!GCM_TABS.some(x=>x[0]===t)) return; _gcm.tab=t; if(!gcInGamesView() && _gcm.open==='closed'){ if(gcmUseView()){ showGamesView(); return; } _gcm.open='half'; } gcSheetRepaint(); }
 function gcmTabsHTML(){
   const cur=_gcm.tab||'games';
   return `<div class="ld-posrow gcm-tabs">${GCM_TABS.map(([k,l])=>`<button class="ld-pos ${cur===k?'active':''}" onclick="gcmSetTab('${k}')">${l}</button>`).join('')}</div>`;
@@ -5884,19 +5888,32 @@ function gcFeedCondense(on, feedEl){
 }
 // After a paint: if the open block leaves the plays under their share of the pane, condense
 // from the start (and remember it was the pane's height, not a scroll, that did it).
+// A new game, week or tab starts the block open and unpinned: the state is the reader's
+// scroll, and a fresh pane has none. Without this a game switched to while condensed stayed
+// condensed at the top of its plays with nothing to open it, and the phone's hand-pinned
+// head could outlive the pane it was pinned for.
+function gcFeedReset(){
+  _gcd.condensed=false; _gcd.condensedShort=false;
+  try{ document.querySelectorAll('.gc-feedview').forEach(fv=>{ fv.classList.remove('gc-condensed'); gcFeedPin(fv, false); }); }catch(e){}
+}
 function gcFeedBalance(){
   try{
     const fv=document.querySelector('.gc-detail .gc-feedview'); if(!fv) return;
     const feed=fv.querySelector('.gc-feedview-feed'), det=fv.closest('.gc-detail'); if(!feed || !det) return;
-    if(window.getComputedStyle && window.getComputedStyle(feed).overflowY!=='auto') return;   // the phone sheet scrolls as one page
-    const share=feed.clientHeight/Math.max(1, det.clientHeight);
-    if(!_gcd.condensed && share<GC_FEED_MIN_SHARE){ _gcd.condensedShort=true; gcFeedCondense(true, feed); }
-    else if(_gcd.condensedShort && _gcd.condensed && feed.scrollTop<6){
-      // would there be room if it opened? measure by opening for a frame
-      fv.classList.remove('gc-condensed');
-      const openShare=feed.clientHeight/Math.max(1, det.clientHeight);
-      if(openShare>=GC_FEED_MIN_SHARE){ _gcd.condensedShort=false; _gcd.condensed=false; }
-      else fv.classList.add('gc-condensed');
+    if(window.getComputedStyle && window.getComputedStyle(feed).overflowY!=='auto'){
+      // the phone: the page scrolls — re-read the window's scroll against the block, which also
+      // restores or clears the hand pin a repaint may have dropped
+      gcFeedWatchScroll(window); return;
+    }
+    // every measurement with the fold's transitions off, so a paint mid-transition cannot
+    // read a half-open block as a short pane and lock it shut
+    const measure=(open)=>{ fv.classList.add('gc-notrans'); fv.classList.toggle('gc-condensed', !open); void fv.offsetHeight; const s=feed.clientHeight/Math.max(1, det.clientHeight); fv.classList.toggle('gc-condensed', !!_gcd.condensed); void fv.offsetHeight; fv.classList.remove('gc-notrans'); return s; };
+    if(!_gcd.condensed){
+      if(measure(true)<GC_FEED_MIN_SHARE){ _gcd.condensedShort=true; gcFeedCondense(true, feed); }
+    } else if(feed.scrollTop<6){
+      // at the top of the plays: open if the pane has the room, whatever folded it
+      if(measure(true)>=GC_FEED_MIN_SHARE){ _gcd.condensedShort=false; gcFeedCondense(false, feed); }
+      else _gcd.condensedShort=true;
     }
   }catch(e){}
 }
@@ -6066,7 +6083,7 @@ function gcDetailRepaint(){
   const paint=()=>{ gcDetailPaintNow(); if(typeof gcFeedBalance==='function'){ if(window.requestAnimationFrame) window.requestAnimationFrame(gcFeedBalance); else gcFeedBalance(); } };
   if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', paint); else paint();   // never under a finger or an open picker
 }
-function gcdSetTab(t){ _gcd.tab=t; gcDetailRepaint(); }
+function gcdSetTab(t){ _gcd.tab=t; if(typeof gcFeedReset==='function') gcFeedReset(); gcDetailRepaint(); }
 function gcdSetSide(s){ _gcd.side=s; gcDetailRepaint(); }
 function gcdSetFeedAll(v){ _gcd.feedAll=!!v; gcDetailRepaint(); }
 function gcdTab(game){ return _gcd.tab || (game && game.state==='pre' ? 'stats' : 'feed'); }

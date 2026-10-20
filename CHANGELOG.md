@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-20
 
+- fix(game-center): a new game, week or tab starts the pinned block open and the balance check measures with the fold's transitions off, so the plays never come up stuck condensed; on the phone the team picker's live line and the Games pill open the Games tab, never the retired slide-up sheet (#200)
 - feat(card): PRS% on the defensive weekly table — PFR's pressures per pass-rush snap, week by week and for the season, the denominator exact from the participation file after a season and estimated from snaps × the team's dropback share in season, coloured on the 2026 league (#199)
 - fix(card): the defensive weekly table names its source — PFR's charting via nflverse — in one short line with an ⓘ that explains what a pressure is here and why PFF's and Next Gen's counts run two to three times higher (#198)
 - feat(game-center): the hero wears the club logos as faded watermarks (a 192px logo tier keeps them crisp here and on the player and defense cards), the win-probability chart glows in the leader's colour with gridlines and each side's chance at the edge, possession is marked by a real football, and the pinned block's fold is a transition rather than a cut (#197)
