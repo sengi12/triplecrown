@@ -51,6 +51,16 @@ Each item says what it needs so it can be picked up cold.
   next cycle lands, update `HIRES_2026` in that test alongside the two tables — the refresh's
   "⚠ … is stale" warning still fires first, but the test now says exactly what is missing.
 
+- **KeepTradeCut's page shape has moved, and the player-card links are stale since 2026-08-22.**
+  The dynasty-rankings page still answers 200 and still embeds `playersArray`, but almost no
+  row survives the `position` / `slug` / `playerName` filter in `parse_ktc_players`
+  (`build_seed.py`) — two of them did, which the build used to call a success. The seed guard
+  has been keeping the previous block every run since, so the app is serving the August map:
+  everyone in it still links correctly, and anyone who entered the league since has no KTC
+  link. The next refresh log now prints the field names a row actually carries
+  ("a row now carries [...]"), which should make this a rename in `parse_ktc_players` rather
+  than a re-scrape. Not fixable from a sandbox that cannot reach keeptradecut.com.
+
 ## Live-season gaps that wait on post-season files
 
 - **Coverage (man / zone, the shells) and the vs-man / vs-zone player splits.** The only
