@@ -330,6 +330,12 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcm-sheet .gc-head-stick,.games-view .gc-head-stick{position:sticky;top:0;z-index:3;background:var(--surface);}
 .gcm-sheet .gc-head-stick{top:56px;}   /* under the sheet's sticky rail of games */
 .games-view .gc-feedview.gc-stuck .gc-head-stick,.gcm-sheet .gc-feedview.gc-stuck .gc-head-stick{box-shadow:0 6px 16px rgba(0,0,0,.35);}
+/* A swipe across the head slides the whole panel aside and the neighbouring game's panel in
+   beside it. The panel is NOT clipped here (the page's overflow-x clip does that): an overflow
+   on it would unpin the stuck block mid-gesture. The underlay grows to the neighbour's own
+   height and stays unclipped, so its stuck block is sticky too and arrives already pinned. */
+.games-view .gc-detail{position:relative;}
+.games-view .gc-detail > .ts-swipe-under{overflow:visible;bottom:auto;background:var(--bg);}
 /* the slim score strip: always in the stick part's layout (so pinning never changes a height),
    invisible until the hero has scrolled off, then faded in */
 .gc-stick-score{display:none;}

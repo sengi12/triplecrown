@@ -33,7 +33,7 @@ const app=new Function(code+`
   return { render:renderRightSidebar, phone:renderGamesPhone, set:gcmSet, open:gcOpenGame, pick:gcPick, line:gcPickerLineHTML, on:gcPhoneOn, tab:gcmSetTab, ldSort:ldSort, ldPos:ldSetPos, ld:()=>_ld,
     phase:()=>currentPhase, setPhase:(p)=>{ currentPhase=p; }, sheetState:()=>_gcm.open, stubView:()=>{ renderContent=()=>{}; syncAppChrome=()=>{}; }, noView:()=>{ _sv=showGamesView; showGamesView=undefined; }, restoreView:()=>{ showGamesView=_sv; },
     host:()=>document.getElementById('gamesSheet'), html:()=>document.getElementById('gamesSheet').innerHTML, bodyCls:()=>[...document.body.classList._s], htmlCls:()=>[...document.documentElement.classList._s], state:()=>_gcm, gc:()=>_gc,
-    swipe:gcmSwipeAction, games:gcmCurrentGames, setWeek:(w)=>{ _gc.week=w; }, preview:gcmSwipePreviewHTML, setMobile:v=>{mobile=v;}, setStarted:v=>{started=v;}, setDraft:v=>{rosterBarVisible=v;}, setBoard:b=>{ BOARD=b; _tcBoard.at=0; _gc.boards={}; }, sidebar:()=>document.getElementById('leaders') };
+    swipe:gcmSwipeAction, headSwipe:gcvSwipeAction, swipeZone:gcvSwipeZone, setGames:(l)=>{ const was=gcmCurrentGames; gcmCurrentGames=()=>l; return ()=>{ gcmCurrentGames=was; }; }, games:gcmCurrentGames, setWeek:(w)=>{ _gc.week=w; }, preview:gcmSwipePreviewHTML, setMobile:v=>{mobile=v;}, setStarted:v=>{started=v;}, setDraft:v=>{rosterBarVisible=v;}, setBoard:b=>{ BOARD=b; _tcBoard.at=0; _gc.boards={}; }, sidebar:()=>document.getElementById('leaders') };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -114,6 +114,25 @@ console.log('=== swipes turn the sheet\'s pages ===');
   } else chk(app.swipe(-80,'games').tab==='leaders', 'with no games loaded a swipe left opens the Leaders');
 }
 
+
+console.log('=== the Games view: a swipe across the head turns to the neighbouring game, at any depth ===');
+{
+  // A touch at an element: a stub whose closest() answers a selector list by class tokens.
+  const at=(tag,...cls)=>({tag, cls, closest(sel){ for(const one of String(sel).split(',')){ const toks=one.match(/\.[\w-]+/g)||[]; const tags=one.trim().split(/[\s>]+/).map(t=>t.replace(/\..*$/,'')).filter(Boolean);
+      if(toks.length ? toks.every(t=>cls.includes(t.slice(1))) && tags.every(t=>t===tag || !t) : tags.includes(tag)) return this; } return null; }});
+  chk(!!app.swipeZone(at('div','games-view','gc-feedview-head','gc-head-stick','gc-stick-score')), 'the stuck scoreboard strip is in the swipe zone');
+  chk(!!app.swipeZone(at('div','games-view','gc-feedview-head','gc-head-top','gc-hero')) && !!app.swipeZone(at('svg','games-view','gc-feedview-head','gc-head-stick','gc-drive-svg')), 'so are the hero and the field');
+  chk(app.swipeZone(at('div','games-view','gc-feedview-feed','gcf-row'))===null && app.swipeZone(at('div','games-view','gc-list','gc-game'))===null, 'the plays and the rail of games are not: they scroll');
+  chk(app.swipeZone(at('rect','games-view','gc-feedview-head','gc-head-stick','gc-wp-svg','gc-wp-hit'))===null, 'the win-probability chart keeps its own scrub');
+  chk(app.swipeZone(at('div','gcm-sheet','gc-feedview-head','gc-head-stick'))===null, 'the fallback sheet runs its own swipe, not this one');
+  chk(!!app.swipeZone(at('div','games-view','gc-detail','gc-herowrap')) && !!app.swipeZone(at('button','games-view','gc-detail','gc-tabs','gc-tab')), 'on the Stats tab the hero and the Feed|Stats row swipe too');
+  const games=[{id:'DEN@KC'},{id:'TB@CIN'},{id:'NE@SEA'}]; const restore=app.setGames(games); const was=app.gc().game;
+  app.gc().game='NE@SEA';
+  chk(app.headSwipe(-100)===null && app.headSwipe(100).game==='TB@CIN', 'the head only turns games: past the last one it stays, never the Leaders page');
+  app.gc().game='DEN@KC';
+  chk(app.headSwipe(-100).game==='TB@CIN' && app.headSwipe(100)===null && app.headSwipe(-30)===null, 'on the first game a swipe left is the next game; a swipe right stays; a short one does nothing');
+  app.gc().game=was; restore();
+}
 
 console.log('=== the swipe turns pages of the week ON SCREEN ===');
 {
