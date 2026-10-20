@@ -979,7 +979,7 @@ function gcPuntRead(text, offense){
 }
 function gcDriveChartHTML(game, sum){
   const d=gcDriveInView(game, sum); if(!d) return '';
-  const G=_gcFieldGeom(); const {W, top, bot, xAt, lane}=G; const H=138;
+  const G=_gcFieldGeom(); const {W, top, bot, xAt, lane}=G; const H=126;   // the label under the field ends at bot+18 (118); no idle band below it
   const f1=(v)=>(+v).toFixed(1);
   const away=game.away, home=game.home;
   const opp = d.team===home ? away : home;
@@ -1233,6 +1233,9 @@ function gcDriveChartHTML(game, sum){
 // — and a tap opens the chart: the away club at the top, the home club at the bottom (their
 // marks on the axis), the line running toward whoever is winning with the winner's side
 // filled in the winner's colour.
+// one geometry for the chart, the tap and the marker: the line runs L..R, the labels sit
+// to the right of R
+const GC_WP_GEOM={W:360, H:84, L:0, R:294, top:10, bot:74};
 function gcWinProbToggle(){ _gcd.wpOpen=!_gcd.wpOpen; gcDetailRepaint(); }
 function gcWinProbHTML(game, sum){
   const wp=(sum && Array.isArray(sum.winprobability)) ? sum.winprobability.filter(w=>w && w.homeWinPercentage!=null) : [];
@@ -1242,17 +1245,25 @@ function gcWinProbHTML(game, sum){
   const nums=`<span class="gc-wp-n"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'"><b>${away}%</b></span><span class="gc-wp-n"><b>${home}%</b><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>`;
   const head=`<button class="gc-wp-head" onclick="gcWinProbToggle()" aria-expanded="${open?'true':'false'}" title="Win probability, play by play — ESPN's model"><span class="gc-wp-lbl">Win probability</span>${nums}<span class="rt-gp-caret">${open?'▴':'▾'}</span></button>`;
   if(!open) return `<div class="gc-wp">${head}</div>`;
-  const W=360, H=72, L=0, R=330, top=8, bot=64, f1=(v)=>(+v).toFixed(1);
+  const {W,H,L,R,top,bot}=GC_WP_GEOM, f1=(v)=>(+v).toFixed(1);
   const x=(i)=>L+(R-L)*(n===1?0:i/(n-1)); const y=(h)=>top+(bot-top)*Math.max(0, Math.min(1, h));   // home at the bottom
   const pts=wp.map((w,i)=>`${f1(x(i))},${f1(y(w.homeWinPercentage))}`);
   const col=(t)=>(typeof pwTeamColor==='function' ? pwTeamColor(t) : '#3d9bff');
   // the line's height from the top IS the home side's share: the region above it is the
   // home share, below it the away share — the winner's share is filled in the winner's
-  // colour, so a 100% finish fills the whole chart
+  // colour, bright at the line and fading toward the far edge, so a 100% finish fills the
+  // whole chart
   const homeWinning = last>=0.5;
+  const leadCol=col(homeWinning?game.home:game.away), gid=`gcWpG${String(game.eid||'')}`;
+  const grad=`<linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${escAttr(leadCol)}" stop-opacity="${homeWinning?'0.18':'0.92'}"/><stop offset="1" stop-color="${escAttr(leadCol)}" stop-opacity="${homeWinning?'0.92':'0.18'}"/></linearGradient>`;
   const fill = homeWinning
-    ? `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${top} L${f1(x(0))},${top} Z" fill="${escAttr(col(game.home))}" opacity="0.22"/>`
-    : `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${bot} L${f1(x(0))},${bot} Z" fill="${escAttr(col(game.away))}" opacity="0.22"/>`;
+    ? `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${top} L${f1(x(0))},${top} Z" fill="url(#${gid})"/>`
+    : `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${bot} L${f1(x(0))},${bot} Z" fill="url(#${gid})"/>`;
+  const grid=[0.25,0.5,0.75].map(h=>`<line x1="${L}" y1="${f1(y(h))}" x2="${R}" y2="${f1(y(h))}" stroke="#7d88a6" stroke-width="${h===0.5?1:0.8}" stroke-dasharray="2 4" opacity="${h===0.5?0.6:0.35}"/>`).join('');
+  const nick=(t)=>{ const nm=(typeof TEAM_NAMES!=='undefined' && TEAM_NAMES && TEAM_NAMES[t]) ? String(TEAM_NAMES[t]) : ''; const i=nm.lastIndexOf(' '); return i>0 ? nm.slice(i+1) : t; };
+  const labels=`<text x="${R+8}" y="${top+9}" class="gc-wp-lab">${away}%</text><text x="${R+8}" y="${top+20}" class="gc-wp-lab2">${escHtml(nick(game.away))}</text>
+      <text x="${R+8}" y="${bot-11}" class="gc-wp-lab">${home}%</text><text x="${R+8}" y="${bot}" class="gc-wp-lab2">${escHtml(nick(game.home))}</text>`;
+  const now=`<line x1="${f1(x(n-1))}" y1="${top}" x2="${f1(x(n-1))}" y2="${bot}" stroke="#c9d2e6" stroke-width="1" opacity="0.7"/>`;
   // A tap on the line names the play behind that point (gcWinProbTap); the index built here
   // is what the tap reads, and a pick already made survives the repaint.
   const eid=String(game.eid||'');
@@ -1262,12 +1273,11 @@ function gcWinProbHTML(game, sum){
   const mark = info ? `<g class="gc-wp-mark"><line x1="${f1(x(pick))}" y1="${top}" x2="${f1(x(pick))}" y2="${bot}" stroke="#fff" stroke-width="1" stroke-dasharray="2 3" opacity="0.8"/><circle cx="${f1(x(pick))}" cy="${f1(y(wp[pick].homeWinPercentage))}" r="4" fill="${escAttr(col(info.side))}" stroke="#fff" stroke-width="1.6"/></g>` : '<g class="gc-wp-mark"></g>';
   return `<div class="gc-wp gc-wp-open">${head}
     <svg viewBox="0 0 ${W} ${H}" class="gc-wp-svg" role="img" aria-label="Win probability, play by play — tap a point for the play">
-      <image href="${escAttr(NFL_LOGO(game.away))}" x="${R+8}" y="${top-2}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
-      <image href="${escAttr(NFL_LOGO(game.home))}" x="${R+8}" y="${bot-16}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
-      ${fill}
-      <line x1="${L}" y1="${f1(y(0.5))}" x2="${R}" y2="${f1(y(0.5))}" stroke="#5a6270" stroke-width="1" stroke-dasharray="3 4"/>
-      <polyline points="${pts.join(' ')}" fill="none" stroke="#f2f5f8" stroke-width="1.6" stroke-linejoin="round"/>
-      <circle cx="${f1(x(n-1))}" cy="${f1(y(last))}" r="3.2" fill="#fff"/>
+      <defs>${grad}</defs>
+      ${fill}${grid}${now}
+      <polyline points="${pts.join(' ')}" fill="none" stroke="#f6f8fb" stroke-width="1.8" stroke-linejoin="round"/>
+      <circle cx="${f1(x(n-1))}" cy="${f1(y(last))}" r="3.6" fill="#fff" stroke="#0f1631" stroke-width="1.2"/>
+      ${labels}
       ${mark}
       <rect class="gc-wp-hit" x="${L}" y="0" width="${R-L}" height="${H}" fill="transparent" onpointerdown="gcWinProbTap(event,'${eid}')" onpointermove="gcWinProbTap(event,'${eid}')"/>
     </svg>${info?gcWinProbCalloutHTML(info, x(pick)/W, eid):''}<div class="gc-wp-src">ESPN's model · ${escHtml(game.away)} at the top, ${escHtml(game.home)} at the bottom · tap the line for the play</div></div>`;
@@ -1326,7 +1336,7 @@ function gcWinProbTap(ev, eid){
     let vx;
     if(svg.createSVGPoint && svg.getScreenCTM){ const pt=svg.createSVGPoint(); pt.x=ev.clientX; pt.y=ev.clientY; vx=pt.matrixTransform(svg.getScreenCTM().inverse()).x; }
     else { const r=svg.getBoundingClientRect(); vx=(ev.clientX-r.left)/Math.max(1,r.width)*360; }
-    const L=0, R=330, n=ix.pts.length;
+    const {L,R}=GC_WP_GEOM, n=ix.pts.length;
     const i=Math.max(0, Math.min(n-1, Math.round((vx-L)/(R-L)*(n-1))));
     if(!_gcd.wpPick) _gcd.wpPick={};
     if(ev.type==='pointerdown' && _gcd.wpPick[String(eid)]===i){ gcWinProbClose(ev, eid); return; }   // the same point again: off
@@ -1358,7 +1368,7 @@ function gcWinProbPaintPick(wrap, eid){
   const svg=wrap.querySelector('.gc-wp-svg'), g=svg && svg.querySelector('.gc-wp-mark'), old=wrap.querySelector('.gc-wp-call');
   const i=_gcd.wpPick ? _gcd.wpPick[String(eid)] : null;
   if(i==null || !ix.pts[i]){ if(g) g.innerHTML=''; if(old) old.remove(); return; }
-  const n=ix.pts.length, W=360, L=0, R=330, top=8, bot=64, f1=(v)=>(+v).toFixed(1);
+  const n=ix.pts.length, {W,L,R,top,bot}=GC_WP_GEOM, f1=(v)=>(+v).toFixed(1);
   const x=L+(R-L)*(n===1?0:i/(n-1)), y=top+(bot-top)*Math.max(0, Math.min(1, ix.pts[i].h));
   const info=gcWinProbInfo(eid, i); if(!info) return;
   const col=(t)=>(typeof pwTeamColor==='function' ? pwTeamColor(t) : '#3d9bff');
