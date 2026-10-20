@@ -5469,7 +5469,19 @@ function gcGameHTML(game, rows, wk){
   // scroll in their own window — so a play tapped for replay keeps animating in view (CSS
   // turns this off inside the phone's bottom sheet, where the whole sheet scrolls).
   const winbar=(typeof gcWinBarHTML==='function') ? gcWinBarHTML(game, sum) : '';
-  if(tab==='feed') return `<div class="gc-feedview${_gcd.condensed?' gc-condensed':''}${_gcd.feedFresh?' gc-notrans':''}"><div class="gc-feedview-head">${hero}${oddsHtml}${top}${tabs}</div><div class="gc-feedview-feed" onscroll="gcFeedScrolled(this)">${gcFeedHTML(game, sum)}${winbar}</div></div>`;
+  if(tab==='feed'){
+    // The head in two parts. On the desktop sidebar the whole head is pinned and condenses
+    // on scroll. On the phone, where the page scrolls, the top part (hero, odds, last play)
+    // scrolls away like any content and the STICK part — a slim score strip, the field, the
+    // drive sentence, the chart, the tabs — is position:sticky, so the browser pins it and
+    // nothing in it ever changes height under the reader's finger. The strip is always in
+    // the layout and simply fades in once the hero has scrolled off (class gc-stuck).
+    const lastPlay=(typeof gcLastPlayHTML==='function') ? gcLastPlayHTML(game, sum) : '';
+    const drive=(typeof gcDriveChartHTML==='function') ? gcDriveChartHTML(game, sum) : '';
+    const wp=(typeof gcWinProbHTML==='function') ? gcWinProbHTML(game, sum) : '';
+    const strip=`<div class="gc-stick-score" aria-hidden="true"><span class="gc-ss-side"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.away))}</span><b class="gc-ss-num">${game.state==='pre'?'':(game.as!=null?game.as:'–')}</b><span class="gc-ss-mid">${mid}</span><b class="gc-ss-num">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}</b><span class="gc-ss-side gc-ss-home">${escHtml(nick(game.home))}<img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'"></span></div>`;
+    return `<div class="gc-feedview${_gcd.condensed?' gc-condensed':''}${_gcd.feedFresh?' gc-notrans':''}"><div class="gc-feedview-head"><div class="gc-head-top">${hero}${oddsHtml}${lastPlay}</div><div class="gc-head-stick">${strip}${drive}${wp}${tabs}</div></div><div class="gc-feedview-feed" onscroll="gcFeedScrolled(this)">${gcFeedHTML(game, sum)}${winbar}</div></div>`;
+  }
   const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.away))}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.home))}</button></div>`;
   const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
   return hero+oddsHtml+top+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
@@ -5892,9 +5904,9 @@ function gcFeedCondense(on, feedEl){
 // condensed at the top of its plays with nothing to open it, and the phone's hand-pinned
 // head could outlive the pane it was pinned for.
 function gcFeedReset(){
-  _gcd.condensed=false;
+  _gcd.condensed=false; _gcd.stuck=false;
   _gcd.feedFresh=true;   // the next paint lands open with no transition: a swap is a cut, not a fold
-  try{ document.querySelectorAll('.gc-feedview').forEach(fv=>{ fv.classList.remove('gc-condensed'); gcFeedPin(fv, false); }); }catch(e){}
+  try{ document.querySelectorAll('.gc-feedview').forEach(fv=>{ fv.classList.remove('gc-condensed'); fv.classList.remove('gc-stuck'); }); }catch(e){}
 }
 // After a paint. A fresh pane (a game, week or tab just switched to) lands OPEN, at the top
 // of its plays, with the fold's transitions off for that first frame — swapping games used
@@ -5920,36 +5932,21 @@ function gcFeedBalance(){
 // The phone: the whole page (or the sheet's body) scrolls and the block is sticky, so the
 // scroll to watch is that scroller's. The signal is the feed view's own top passing the
 // scroller's top — not an inner scrollTop — which holds whatever sits above it.
+// The phone: the page (or the sheet's body) scrolls and the stick part pins itself. The
+// only thing to do on scroll is say whether it IS pinned — the hero gone above — so the
+// slim score strip can fade in. No condensing, no hand pin, nothing that changes a height.
 function gcFeedWatchScroll(scroller){
   try{
     const fv=document.querySelector('.gc-feedview'); if(!fv) return;
     const feed=fv.querySelector('.gc-feedview-feed');
     if(feed && window.getComputedStyle && window.getComputedStyle(feed).overflowY==='auto') return;   // the desktop window has its own handler
+    const stick=fv.querySelector('.gc-head-stick'); if(!stick) return;
     const isWin=(scroller===window || !scroller || !scroller.getBoundingClientRect);
     const top0=isWin ? 0 : scroller.getBoundingClientRect().top;
-    const y=top0 - fv.getBoundingClientRect().top;
-    if(y>28 && !_gcd.condensed){ gcFeedCondense(true, feed); if(isWin) gcFeedPin(fv, true); }
-    else if(y<6 && _gcd.condensed){ gcFeedCondense(false, feed); if(isWin) gcFeedPin(fv, false); }
-    else if(isWin && _gcd.condensed) gcFeedPin(fv, true);   // a repaint dropped the inline pin: put it back
+    const stickTop=parseFloat((window.getComputedStyle ? window.getComputedStyle(stick).top : '0'))||0;
+    const stuck = stick.getBoundingClientRect().top <= top0 + stickTop + 1 && fv.getBoundingClientRect().top < top0 - 8;
+    if(stuck!==!!_gcd.stuck){ _gcd.stuck=stuck; fv.classList.toggle('gc-stuck', stuck); }
   }catch(e){}
-}
-// The full-page Games view scrolls the window, but the page's content column is an
-// overflow:auto box that never scrolls itself — which is exactly the ancestor that breaks
-// position:sticky. So on the window the block is pinned by hand: fixed to the top, the
-// feed view padded by the block's height so the plays do not jump up under it.
-function gcFeedPin(fv, on){
-  const head=fv.querySelector('.gc-feedview-head'); if(!head) return;
-  if(!on){ head.style.position=''; head.style.top=''; head.style.left=''; head.style.width=''; head.style.zIndex=''; fv.style.paddingTop=''; fv.style.transition=''; fv.classList.remove('gc-pinned'); if(_gcd.pinT){ clearTimeout(_gcd.pinT); _gcd.pinT=null; } return; }
-  if(fv.classList.contains('gc-pinned') && head.style.position==='fixed') return;
-  const r=fv.getBoundingClientRect();
-  fv.classList.add('gc-pinned');
-  head.style.position='fixed'; head.style.top='0px'; head.style.left=r.left+'px'; head.style.width=r.width+'px'; head.style.zIndex='30';
-  // the block is mid-transition when it pins: hold the plays where they are now, then ease
-  // the placeholder down to the block's settled height once it has shrunk
-  fv.style.paddingTop=head.getBoundingClientRect().height+'px';
-  fv.style.transition='padding-top .26s ease';
-  if(_gcd.pinT) clearTimeout(_gcd.pinT);
-  _gcd.pinT=setTimeout(()=>{ try{ if(fv.classList.contains('gc-pinned')) fv.style.paddingTop=head.getBoundingClientRect().height+'px'; }catch(e){} }, 340);
 }
 if(typeof window!=='undefined' && window.addEventListener){
   window.addEventListener('resize', ()=>{ try{ if(window.requestAnimationFrame) window.requestAnimationFrame(gcFeedBalance); else gcFeedBalance(); }catch(e){} });

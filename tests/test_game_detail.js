@@ -655,12 +655,15 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(!app.condensed().on && !fvStub.cls.has('gc-condensed'), 'scrolled back to the top: it opens up again');
   // the phone: the page scrolls and the block is sticky — the feed view's top passing the window's top is the signal
   app.setCondensed(false);
-  const fvPhone={top:0, classList:{toggle(c,v){ fvStub.cls[v?'add':'delete'](c); }, remove(c){ fvStub.cls.delete(c); }, add(c){ fvStub.cls.add(c); }}, getBoundingClientRect(){ return {top:fvPhone.top}; }, querySelector(){ return null; }};
+  // the phone never condenses: the top part scrolls away and the stick part pins itself; the
+  // watcher only says whether it IS pinned, so the slim score strip can fade in
+  const stickStub={top:0, getBoundingClientRect(){ return {top:stickStub.top}; }};
+  const fvPhone={top:0, classList:{toggle(c,v){ fvStub.cls[v?'add':'delete'](c); }, remove(c){ fvStub.cls.delete(c); }, add(c){ fvStub.cls.add(c); }}, getBoundingClientRect(){ return {top:fvPhone.top}; }, querySelector(q){ return q==='.gc-head-stick'?stickStub:null; }};
   const qsOld=document.querySelector; document.querySelector=(q)=>q==='.gc-feedview'?fvPhone:qsOld(q);
-  fvPhone.top=-120; app.watch(global.window);
-  chk(app.condensed().on, 'the phone page scrolled 120px past the block’s top: condensed');
-  fvPhone.top=0; app.watch(global.window);
-  chk(!app.condensed().on, 'scrolled back up: open');
+  fvPhone.top=-300; stickStub.top=0; app.watch(global.window);
+  chk(!app.condensed().on && fvStub.cls.has('gc-stuck'), 'the phone page scrolled past the hero: nothing condenses, the stick part is flagged pinned (the strip fades in)');
+  fvPhone.top=40; stickStub.top=260; app.watch(global.window);
+  chk(!fvStub.cls.has('gc-stuck'), 'scrolled back up: the flag clears');
   document.querySelector=qsOld;
   app.setCondensed(true); app.setTab('stats'); chk(!app.condensed().on, 'switching Feed → Stats (and back) starts the block open, not stuck condensed');
   app.setCondensed(false);
