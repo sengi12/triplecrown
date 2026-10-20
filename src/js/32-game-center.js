@@ -438,7 +438,7 @@ function gcGameHTML(game, rows, wk){
   // scroll in their own window — so a play tapped for replay keeps animating in view (CSS
   // turns this off inside the phone's bottom sheet, where the whole sheet scrolls).
   const winbar=(typeof gcWinBarHTML==='function') ? gcWinBarHTML(game, sum) : '';
-  if(tab==='feed') return `<div class="gc-feedview${_gcd.condensed?' gc-condensed':''}"><div class="gc-feedview-head">${hero}${oddsHtml}${top}${tabs}</div><div class="gc-feedview-feed" onscroll="gcFeedScrolled(this)">${gcFeedHTML(game, sum)}${winbar}</div></div>`;
+  if(tab==='feed') return `<div class="gc-feedview${_gcd.condensed?' gc-condensed':''}${_gcd.feedFresh?' gc-notrans':''}"><div class="gc-feedview-head">${hero}${oddsHtml}${top}${tabs}</div><div class="gc-feedview-feed" onscroll="gcFeedScrolled(this)">${gcFeedHTML(game, sum)}${winbar}</div></div>`;
   const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.away))}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.home))}</button></div>`;
   const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
   return hero+oddsHtml+top+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
@@ -841,13 +841,12 @@ function renderGamesPhone(fromLoad){
 // kept — and opens back up at the top of the feed. A pane too short to give the plays a fair
 // window starts condensed. The flag lives in _gcd so a repaint keeps the state; the class is
 // toggled in place so a scroll never costs a repaint.
-const GC_FEED_MIN_SHARE=0.42;   // the plays deserve at least this much of the pane when open
 function gcFeedScrolled(el){
   try{
     if(!el) return;
     const y=el.scrollTop||0;
     if(y>28 && !_gcd.condensed) gcFeedCondense(true, el);
-    else if(y<6 && _gcd.condensed && !_gcd.condensedShort) gcFeedCondense(false, el);
+    else if(y<6 && _gcd.condensed) gcFeedCondense(false, el);
   }catch(e){}
 }
 function gcFeedCondense(on, feedEl){
@@ -862,28 +861,29 @@ function gcFeedCondense(on, feedEl){
 // condensed at the top of its plays with nothing to open it, and the phone's hand-pinned
 // head could outlive the pane it was pinned for.
 function gcFeedReset(){
-  _gcd.condensed=false; _gcd.condensedShort=false;
+  _gcd.condensed=false;
+  _gcd.feedFresh=true;   // the next paint lands open with no transition: a swap is a cut, not a fold
   try{ document.querySelectorAll('.gc-feedview').forEach(fv=>{ fv.classList.remove('gc-condensed'); gcFeedPin(fv, false); }); }catch(e){}
 }
+// After a paint. A fresh pane (a game, week or tab just switched to) lands OPEN, at the top
+// of its plays, with the fold's transitions off for that first frame — swapping games used
+// to fold the block on screen every time, which read as a stunt. The reader folds it by
+// scrolling into the plays and opens it by scrolling back up; nothing folds it for them.
 function gcFeedBalance(){
   try{
     const fv=document.querySelector('.gc-detail .gc-feedview'); if(!fv) return;
-    const feed=fv.querySelector('.gc-feedview-feed'), det=fv.closest('.gc-detail'); if(!feed || !det) return;
-    if(window.getComputedStyle && window.getComputedStyle(feed).overflowY!=='auto'){
-      // the phone: the page scrolls — re-read the window's scroll against the block, which also
-      // restores or clears the hand pin a repaint may have dropped
-      gcFeedWatchScroll(window); return;
+    const feed=fv.querySelector('.gc-feedview-feed'); if(!feed) return;
+    if(_gcd.feedFresh){
+      _gcd.feedFresh=false;
+      if(feed.scrollTop>0) feed.scrollTop=0;   // the scroll keeper may have carried the old game's offset over
+      fv.classList.add('gc-notrans');
+      const off=()=>{ try{ fv.classList.remove('gc-notrans'); }catch(e){} };
+      if(window.requestAnimationFrame) window.requestAnimationFrame(()=>window.requestAnimationFrame(off)); else off();
+      setTimeout(off, 320);   // and in any case before the reader's first scroll could fold it
     }
-    // every measurement with the fold's transitions off, so a paint mid-transition cannot
-    // read a half-open block as a short pane and lock it shut
-    const measure=(open)=>{ fv.classList.add('gc-notrans'); fv.classList.toggle('gc-condensed', !open); void fv.offsetHeight; const s=feed.clientHeight/Math.max(1, det.clientHeight); fv.classList.toggle('gc-condensed', !!_gcd.condensed); void fv.offsetHeight; fv.classList.remove('gc-notrans'); return s; };
-    if(!_gcd.condensed){
-      if(measure(true)<GC_FEED_MIN_SHARE){ _gcd.condensedShort=true; gcFeedCondense(true, feed); }
-    } else if(feed.scrollTop<6){
-      // at the top of the plays: open if the pane has the room, whatever folded it
-      if(measure(true)>=GC_FEED_MIN_SHARE){ _gcd.condensedShort=false; gcFeedCondense(false, feed); }
-      else _gcd.condensedShort=true;
-    }
+    const inner = window.getComputedStyle ? window.getComputedStyle(feed).overflowY==='auto' : true;
+    if(!inner){ gcFeedWatchScroll(window); return; }   // the phone: the page scrolls, and the pin follows it
+    if(_gcd.condensed && feed.scrollTop<6) gcFeedCondense(false, feed);   // at the top of the plays: open
   }catch(e){}
 }
 // The phone: the whole page (or the sheet's body) scrolls and the block is sticky, so the
@@ -898,7 +898,7 @@ function gcFeedWatchScroll(scroller){
     const top0=isWin ? 0 : scroller.getBoundingClientRect().top;
     const y=top0 - fv.getBoundingClientRect().top;
     if(y>28 && !_gcd.condensed){ gcFeedCondense(true, feed); if(isWin) gcFeedPin(fv, true); }
-    else if(y<6 && _gcd.condensed){ _gcd.condensedShort=false; gcFeedCondense(false, feed); if(isWin) gcFeedPin(fv, false); }
+    else if(y<6 && _gcd.condensed){ gcFeedCondense(false, feed); if(isWin) gcFeedPin(fv, false); }
     else if(isWin && _gcd.condensed) gcFeedPin(fv, true);   // a repaint dropped the inline pin: put it back
   }catch(e){}
 }
