@@ -643,14 +643,14 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   console.log('=== desktop feed: the field is pinned up top, the plays scroll on their own ===');
   app.setSum('401872925', SUM); app.setTab('feed');
   const ghFeed=app.gameHTML(app.GAME('post'));
-  chk(/class="gc-feedview"/.test(ghFeed) && /gc-feedview-head/.test(ghFeed) && /gc-feedview-feed/.test(ghFeed) && ghFeed.indexOf('gc-drive-svg')<ghFeed.indexOf('gc-feedview-feed') && ghFeed.indexOf('gc-feedview-head')<ghFeed.indexOf('gcf'), 'the feed tab pins the hero + field + tabs in a head, and the plays scroll in their own window below');
+  chk(/class="gc-feedview( gc-notrans)?"/.test(ghFeed) && /gc-feedview-head/.test(ghFeed) && /gc-feedview-feed/.test(ghFeed) && ghFeed.indexOf('gc-drive-svg')<ghFeed.indexOf('gc-feedview-feed') && ghFeed.indexOf('gc-feedview-head')<ghFeed.indexOf('gcf'), 'the feed tab pins the hero + field + tabs in a head, and the plays scroll in their own window below');
   console.log('=== the pinned block condenses while the plays scroll; a tapped play paints at once ===');
   chk(/<div class="gc-feedview-feed" onscroll="gcFeedScrolled\(this\)">/.test(ghFeed) && !/gc-condensed/.test(ghFeed), 'the plays\' window reports its scroll; nothing condensed at the top');
   const fvStub={cls:new Set(), classList:{toggle(c,v){ if(v) fvStub.cls.add(c); else fvStub.cls.delete(c); }, remove(c){ fvStub.cls.delete(c); }, add(c){ fvStub.cls.add(c); }}};
   const feedStub=(y)=>({scrollTop:y, closest:()=>fvStub});
   app.scrolled(feedStub(60));
   chk(app.condensed().on && fvStub.cls.has('gc-condensed'), 'scrolled 60px into the plays: the block condenses, in place, without a repaint');
-  chk(/class="gc-feedview gc-condensed"/.test(app.gameHTML(app.GAME('post'))), 'a repaint keeps it condensed');
+  chk(/class="gc-feedview gc-condensed/.test(app.gameHTML(app.GAME('post'))), 'a repaint keeps it condensed');
   app.scrolled(feedStub(2));
   chk(!app.condensed().on && !fvStub.cls.has('gc-condensed'), 'scrolled back to the top: it opens up again');
   // the phone: the page scrolls and the block is sticky — the feed view's top passing the window's top is the signal
