@@ -30,7 +30,7 @@ const app=new Function(code+`
   leagueSnapshot={name:'Dirty Mikes', myUserId:'u1', scoringRaw:{pass_yd:0.04,pass_td:4,pass_int:-1,rush_yd:0.1,rush_td:6,rec:0.5,rec_yd:0.1,fgm:3,xpm:1,pts_allow:-0.1,sack:1,idp_tkl:1,idp_sack:2},
     teamList:[{rosterId:1, ownerId:'u1', owner:'Sengi12', teamName:'Sengi', players:[{id:'q1'},{id:'r2'}]},{rosterId:2, ownerId:'u2', owner:'RichBigMeechy', teamName:'Rich', players:[{id:'w2'}]}]};
   _gcd.tab='stats'; _gcd.side='fantasy';   // the fantasy pane, as before the Feed | Stats tabs
-  return { pts:tcSleeperPoints, mode:gcSetMode, step:gcStep, openLast:gcOpenLast, setPos:gcSetPos, sideClass:gcSideClass, setHub:(r)=>{ hubState.results=r; hubState.loadedAt=Date.now(); leagueSnapshot.leagueId='L1'; }, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc, games:()=>gcGames(gcBoard(1)), mine:gcIsMine, maxW:gcMaxWidth, gameHTML:gcGameHTML, weekOpts:gcWeekOptions, gcWeek, board:gcBoard, setHold:(f)=>{tcHoldsFinishedWeek=f;}, setWeek:(w,dw)=>{TC_SEASON.week=w; TC_SEASON.displayWeek=dw;}, breakdown:tcPointsBreakdown, brkHTML:tcBreakdownHTML, playerHTML:gcPlayerHTML, setScoring:(s)=>{scoringSettings=s;}, setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; } };
+  return { pts:tcSleeperPoints, mode:gcSetMode, step:gcStep, openLast:gcOpenLast, openGame:gcOpenGame, sheetSet:gcmSet, pick:gcPick, setMobile:(v)=>{ isMobileTeamPickerLayout=()=>v; }, phase:()=>currentPhase, setPhase:(p)=>{ currentPhase=p; }, sheet:()=>_gcm.open, condensed:()=>({on:!!_gcd.condensed, short:!!_gcd.condensedShort}), setCondensed:(v)=>{ _gcd.condensed=v; _gcd.condensedShort=v; }, stubViews:()=>{ renderContent=()=>{}; syncAppChrome=()=>{}; renderGamesView=()=>{}; renderGamesPhone=()=>{}; renderRightSidebar=()=>{}; }, setPos:gcSetPos, sideClass:gcSideClass, setHub:(r)=>{ hubState.results=r; hubState.loadedAt=Date.now(); leagueSnapshot.leagueId='L1'; }, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc, games:()=>gcGames(gcBoard(1)), mine:gcIsMine, maxW:gcMaxWidth, gameHTML:gcGameHTML, weekOpts:gcWeekOptions, gcWeek, board:gcBoard, setHold:(f)=>{tcHoldsFinishedWeek=f;}, setWeek:(w,dw)=>{TC_SEASON.week=w; TC_SEASON.displayWeek=dw;}, breakdown:tcPointsBreakdown, brkHTML:tcBreakdownHTML, playerHTML:gcPlayerHTML, setScoring:(s)=>{scoringSettings=s;}, setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -139,6 +139,15 @@ console.log('=== a game still ahead shows each side with the week\'s projected l
   const live=app.board(1), ahead=app.board(2);
   chk(live && Object.keys(live).length>0 && ahead===null, 'on a Tuesday week 1 is the live board; asking for week 2 reads its own (not yet in) instead of handing back week 1');
   app.setHold(()=>false); app.setWeek(1,null);
+  console.log('=== the phone opens a game in the Games tab, never the slide-up sheet; a new game or tab starts the block open ===');
+  app.stubViews(); app.setMobile(true); app.setPhase('Passing');
+  app.openGame('TB@CIN');
+  chk(app.phase()==='Games' && app.sheet()==='closed', 'a team’s live line on the phone opens the Games view, and the sheet stays closed');
+  app.setPhase('Passing'); app.sheetSet('half');
+  chk(app.phase()==='Games' && app.sheet()==='closed', 'the pill that used to raise the sheet opens the Games view too');
+  app.setMobile(false); app.setPhase('Passing');
+  app.setCondensed(true); app.pick('TB@CIN');
+  chk(!app.condensed().on && !app.condensed().short, 'picking another game starts its block open (the state was the old game’s scroll)');
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
   process.exit(pass===total?0:1);
 })();

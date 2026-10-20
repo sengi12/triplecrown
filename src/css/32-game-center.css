@@ -303,6 +303,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-feedview.gc-condensed .gc-status{font-size:9.5px;padding:2px 7px;}
 .gc-feedview.gc-condensed .gc-odds,.gc-feedview.gc-condensed .gc-last,.gc-feedview.gc-condensed .gc-drive-sum,.gc-feedview.gc-condensed .gc-wp-svg,.gc-feedview.gc-condensed .gc-wp-src{max-height:0;min-height:0;opacity:0;padding-top:0;padding-bottom:0;margin-top:0;margin-bottom:0;border-width:0;}
 .gc-feedview.gc-condensed .gc-wp-call{display:none;}
+.gc-feedview.gc-notrans,.gc-feedview.gc-notrans *{transition:none!important;}   /* measuring, not animating */
 @media (prefers-reduced-motion:reduce){ .gc-feedview .gc-hero,.gc-feedview .gc-score,.gc-feedview .gc-team,.gc-feedview .gc-status,.gc-feedview .gc-last,.gc-feedview .gc-odds,.gc-feedview .gc-drive-sum,.gc-feedview .gc-wp-svg,.gc-feedview .gc-wp-src,.gc-hero-wm{transition:none;} }
 .gc-feedview.gc-condensed .gc-drive{margin-top:4px;}
 .gc-feedview.gc-condensed .gc-feedview-head .gc-tabs{margin:4px 10px 4px;}
