@@ -24207,8 +24207,15 @@ function renderPcardDefWeekly(pid){
     </div>`);
   }
   if(!seasonBlocks.length) return '<div class="pcard-loading">No defensive weekly rows for this player.</div>';
-  return `<div class="dw-wrap">${seasonBlocks.join('')}<div class="pcard-src">Defensive weekly stats from nflverse PFR advanced-defense + participation/pbp enrichment.</div></div>`;
+  return `<div class="dw-wrap">${seasonBlocks.join('')}<div class="pcard-src">nflverse · Pro Football Reference's charting ${(typeof tcInfoBtn==='function')?tcInfoBtn('def_weekly_src','Where these numbers come from — and why PFF’s pressures run higher'):''}</div></div>`;
 }
+// The ⓘ under the table. Pressures are the question it gets asked most: PFF and Next Gen
+// Stats chart a pressure by their own rules and post two to three times PFR's count for the
+// same edge rusher, so a card reading 8 beside a site reading 25 looks broken when it is not.
+TC_INFO_BOOK.def_weekly_src={title:'Defensive stats: the source', body:`
+  <p>Every advanced column here — <b>PRS</b>, <b>HUR</b>, <b>HIT</b>, <b>BLZ</b>, the coverage columns, <b>MISS</b> — is <b>Pro Football Reference’s charting</b>, delivered through nflverse. Tackles, TFL, PD, FF and INT are the box score; snap share is the participation file.</p>
+  <p><b>A pressure here is PFR’s pressure</b>: a hurry, a hit on the quarterback, or a sack, as PFR charts it. PRS is the sum of HUR, HIT and SACK. PFF and Next Gen Stats chart pressures by their own rules and routinely post two to three times PFR’s number for the same player — an edge rusher at 25 on PFF is often 8 to 10 here. Neither of those feeds is public, so the card carries PFR’s, and ranks and colours compare players on the same scale.</p>
+  <p class="tc-info-sub">A week PFR has not charted yet shows blank advanced cells; the snap share still proves he played. PFR’s charting lands within a day or two of the game.</p>`};
 // ─────────────────────────────────────────────────────────────────────────────
 // Team defense (D/ST) player card. Team defenses aren't in the Sleeper player DB and have
 // no ESPN athlete id, so the normal gamelog paths don't apply. Instead we pull Sleeper's

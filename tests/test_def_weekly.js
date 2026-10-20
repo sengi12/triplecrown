@@ -17,7 +17,7 @@ const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   pcardDefWeeklyAvailable, renderPcardDefWeekly, renderPcardStatTabs, setPcardStatsMode,
   setPlayers:(p)=>{sleeperPlayers=p;},
-  setNflverse:(n)=>{NFLVERSE=n;},
+  setNflverse:(n)=>{NFLVERSE=n;}, infoBody:(k)=>{ const i=TC_INFO_BOOK[k]; return i ? (typeof i.body==='function'?i.body():i.body) : ''; },
   setPcardState:(s)=>{pcardState=s;},
   setMode:(m)=>{pcardStatsMode=m;},
   getTabs:()=>document.getElementById('pcardTabs').innerHTML,
@@ -52,6 +52,7 @@ const body=app.getBody();
 chk(body.includes('PRS'),'def weekly tab renders pressure column');
 chk(body.includes('SACK'),'def weekly tab renders sacks column');
 chk(body.includes('pcard-opp-logo'),'pro defensive view renders opponent logos (ESPN-style)');
-chk(body.includes('Defensive weekly stats from nflverse'),'def weekly tab renders source note');
+chk(/Pro Football Reference[’']s charting/.test(body) && /tc-info-btn[^>]*onclick="tcInfoPop\(event,'def_weekly_src'\)"/.test(body),'def weekly tab names its source in one short line with an ⓘ');
+chk(/PFR’s pressure/.test(app.infoBody('def_weekly_src')) && /PFF and Next Gen Stats/.test(app.infoBody('def_weekly_src')) && /25 on PFF is often 8 to 10 here/.test(app.infoBody('def_weekly_src')),'the ⓘ says a pressure is PFR’s and why PFF’s count runs higher');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));
