@@ -6,6 +6,10 @@ this file is the merge history, newest first, one line per PR. Add a line when a
 
 Open work lives in [TODO.md](TODO.md).
 
+## 2026-10-20
+
+- feat(game-center): the hero wears the club logos as faded watermarks (a 192px logo tier keeps them crisp here and on the player and defense cards), the win-probability chart glows in the leader's colour with gridlines and each side's chance at the edge, possession is marked by a real football, and the pinned block's fold is a transition rather than a cut (#197)
+
 ## 2026-10-19
 
 - feat(game-center): the pinned block over the plays condenses the moment the feed is scrolled — a slim score line, the field, the win-probability line and the tabs stay, the rest folds — on the desktop sidebar and pinned to the top of the phone's page alike, and a tapped play paints at once and always animates (#196)

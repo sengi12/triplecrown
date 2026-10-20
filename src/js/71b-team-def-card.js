@@ -21,8 +21,8 @@ function renderTeamDefShell(pid){
   const html = `
     <div class="pcard" onclick="event.stopPropagation()">
       <div class="pcard-hero" style="${heroStyle}">
-        <div class="pcard-hero-logo" style="background-image:url('${NFL_LOGO(team)}')"></div>
-        <img src="${NFL_LOGO(team)}" class="pcard-hero-img pcard-hero-dst" onerror="this.style.display='none'">
+        <div class="pcard-hero-logo" style="background-image:url('${(typeof NFL_LOGO_HI==='function'?NFL_LOGO_HI:NFL_LOGO)(team)}')"></div>
+        <img src="${(typeof NFL_LOGO_HI==='function'?NFL_LOGO_HI:NFL_LOGO)(team)}" class="pcard-hero-img pcard-hero-dst" onerror="this.style.display='none'">
         <div class="pcard-hero-main">
           <div class="pcard-name">${full}</div>
           <div class="pcard-sub"><span class="pos-badge pos-DEF">D/ST</span><span class="pcard-team">Team Defense</span></div>

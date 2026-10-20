@@ -57,7 +57,7 @@ const TC_ICON = (() => {
             '<ellipse cx="10.5" cy="10.5" rx="1.9" ry="1.2" transform="rotate(-24 10.5 10.5)"/>' +
             '<path d="M13 12l2.9 2.1-1.1 3.2"/>' +              // front leg, knee up
             '<path d="M13 12l-2.5 4.3-2 3.2"/>',                // trailing leg
-    football:'<path d="M4 12c0-4 4-8 8-8s8 4 8 8-4 8-8 8-8-4-8-8Z"/><path d="M8 8s2 4 2 8M16 8s-2 4-2 8M9 12h6"/>',
+    football:'<ellipse cx="12" cy="12" rx="10.5" ry="6.2" transform="rotate(-32 12 12)" fill="currentColor" stroke="none"/><path d="M8.3 14.2l7.4-4.4M10.1 11.6l.9 1.5M11.7 10.6l.9 1.5M13.3 9.7l.9 1.5" stroke="#0e1424" stroke-width="1.25" stroke-linecap="round"/>',
     scoreboard:'<rect x="3" y="4" width="18" height="11" rx="1.5"/><path d="M12 4v11M6.5 8h3M14.5 8h3M6.5 11.5h3M14.5 11.5h3M12 15v3M8 20h8"/>',
     export: '<path d="M12 15V4M8 8l4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/>',
     download:'<path d="M12 4v11M8 11l4 4 4-4M5 20h14"/>',

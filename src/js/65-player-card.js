@@ -499,7 +499,7 @@ function renderPlayerCardShell(pid, pos, team){
           <div class="pcard-hero-shot">
             <img src="${heroPack.src||''}" class="pcard-hero-img" data-fallbacks="${heroFallbacks.join('|')}" onerror="pcardImgFallback(this)">
           </div>
-          <div class="pcard-hero-logo" style="${tm?`background-image:url('${NFL_LOGO(tm)}')`:''}"></div>
+          <div class="pcard-hero-logo" style="${tm?`background-image:url('${(typeof NFL_LOGO_HI==='function'?NFL_LOGO_HI:NFL_LOGO)(tm)}')`:''}"></div>
           <div class="pcard-hero-main">
             <div class="pcard-name">${nameHtml}</div>
             <div class="pcard-sub">${typeof tcOwnerChip==='function'?tcOwnerChip(pid, name):''}</div>

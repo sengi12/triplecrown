@@ -51,8 +51,10 @@
    happens, two pieces of type never sit on top of each other. */
 .gc-team{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 /* the codes as faded wordmarks behind each side */
-.gc-hero-wm{position:absolute;top:50%;transform:translateY(-52%);font-size:46px;font-weight:900;letter-spacing:-.04em;color:#fff;opacity:.07;pointer-events:none;line-height:1;}
-.gc-hero-wm-a{left:-6px;} .gc-hero-wm-h{right:-6px;}
+/* the club's logo, big and faded, behind each side — the player card's own device */
+.gc-hero-wm{position:absolute;top:50%;transform:translateY(-50%);width:112px;height:112px;object-fit:contain;opacity:.17;pointer-events:none;transition:opacity .3s ease;}
+.gc-hero-wm-a{left:-14px;} .gc-hero-wm-h{right:-14px;}
+.gc-hero .gc-logo{display:none;}   /* the watermark IS the logo; the small one returns on the condensed line */
 .gc-side{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;}
 .gc-side-home{align-items:flex-end;}
 .gc-side .gc-logo{margin-bottom:2px;}
@@ -182,7 +184,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 /* Hero — bigger, bolder, the two clubs' colours behind (Sleeper's game header). */
 .games-view .gc-detail{overflow:visible;}
 .games-view .gc-hero{padding:16px 14px 14px;border-radius:20px;margin:2px 0 10px;border-bottom:none;}
-.games-view .gc-hero-wm{font-size:58px;}
+.games-view .gc-hero-wm{width:136px;height:136px;}
 .games-view .gc-logo{width:34px;height:34px;}
 .games-view .gc-team{font-size:18px;}
 .games-view .gc-score{font-size:36px;}
@@ -286,16 +288,22 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-feedview-head .gc-tabs{margin:8px 10px 6px;}
 /* condensed: once the plays are scrolled (or the pane is short) the pinned block shrinks to a
    slim score line and the field — the plays get the room; the field stays for a tapped replay */
+.gc-feedview .gc-hero{transition:padding .3s ease,gap .3s ease;}
+.gc-feedview .gc-score,.gc-feedview .gc-team,.gc-feedview .gc-status{transition:font-size .3s ease;}
+.gc-feedview .gc-last,.gc-feedview .gc-odds,.gc-feedview .gc-drive-sum,.gc-feedview .gc-wp-svg,.gc-feedview .gc-wp-src{display:block;max-height:300px;overflow:hidden;transition:max-height .3s ease,min-height .3s ease,opacity .22s ease,padding .3s ease,margin .3s ease;}
 .gc-feedview.gc-condensed .gc-hero{padding:5px 10px 4px;gap:6px;}
-.gc-feedview.gc-condensed .gc-hero .gc-logo{width:18px;height:18px;margin:0;}
+.gc-feedview.gc-condensed .gc-hero .gc-logo{display:inline-block;width:18px;height:18px;margin:0;}
+.gc-feedview.gc-condensed .gc-hero-wm{opacity:0;}
 .gc-feedview.gc-condensed .gc-side{flex-direction:row;align-items:center;gap:6px;}
 .gc-feedview.gc-condensed .gc-side-home{flex-direction:row-reverse;}
-.gc-feedview.gc-condensed .gc-rec,.gc-feedview.gc-condensed .gc-to,.gc-feedview.gc-condensed .gc-hero-wm,.gc-feedview.gc-condensed .gc-src,.gc-feedview.gc-condensed .gc-spot:empty{display:none;}
+.gc-feedview.gc-condensed .gc-rec,.gc-feedview.gc-condensed .gc-to,.gc-feedview.gc-condensed .gc-src,.gc-feedview.gc-condensed .gc-spot:empty{display:none;}
 .gc-feedview.gc-condensed .gc-team{font-size:12px;}
 .gc-feedview.gc-condensed .gc-score{font-size:20px;}
 .gc-feedview.gc-condensed .gc-mid{gap:2px;}
 .gc-feedview.gc-condensed .gc-status{font-size:9.5px;padding:2px 7px;}
-.gc-feedview.gc-condensed .gc-odds,.gc-feedview.gc-condensed .gc-last,.gc-feedview.gc-condensed .gc-drive-sum,.gc-feedview.gc-condensed .gc-wp-svg,.gc-feedview.gc-condensed .gc-wp-src,.gc-feedview.gc-condensed .gc-wp-call{display:none;}
+.gc-feedview.gc-condensed .gc-odds,.gc-feedview.gc-condensed .gc-last,.gc-feedview.gc-condensed .gc-drive-sum,.gc-feedview.gc-condensed .gc-wp-svg,.gc-feedview.gc-condensed .gc-wp-src{max-height:0;min-height:0;opacity:0;padding-top:0;padding-bottom:0;margin-top:0;margin-bottom:0;border-width:0;}
+.gc-feedview.gc-condensed .gc-wp-call{display:none;}
+@media (prefers-reduced-motion:reduce){ .gc-feedview .gc-hero,.gc-feedview .gc-score,.gc-feedview .gc-team,.gc-feedview .gc-status,.gc-feedview .gc-last,.gc-feedview .gc-odds,.gc-feedview .gc-drive-sum,.gc-feedview .gc-wp-svg,.gc-feedview .gc-wp-src,.gc-hero-wm{transition:none;} }
 .gc-feedview.gc-condensed .gc-drive{margin-top:4px;}
 .gc-feedview.gc-condensed .gc-feedview-head .gc-tabs{margin:4px 10px 4px;}
 .gc-feedview .gc-feedview-head{transition:none;}
@@ -485,6 +493,8 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-wp-head .rt-gp-caret{color:var(--muted);}
 .gc-wp-svg{width:100%;height:auto;display:block;padding:0 8px;box-sizing:border-box;}
 .gc-wp-src{font-size:8.5px;color:var(--muted);letter-spacing:.04em;font-weight:700;padding:2px 9px 6px;}
+.gc-wp-lab{font-size:11px;font-weight:900;fill:#f6f8fb;font-family:inherit;}
+.gc-wp-lab2{font-size:8.5px;font-weight:700;fill:#aeb8d0;font-family:inherit;}
 /* a tap on the line names the play: a marker on the point, a bubble over the chart */
 .gc-wp{position:relative;}
 .gc-wp-svg{touch-action:pan-y;cursor:crosshair;}
@@ -529,7 +539,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 /* the hero */
 .gc-detail .gc-hero,.games-view .gc-hero,.gcm-sheet .gc-hero{background:linear-gradient(180deg,var(--gcn3) 0%,var(--gcn) 100%);border:none;border-radius:24px;padding:18px 16px 16px;margin:2px 0 8px;gap:10px;}
 .gc-detail .gc-hero::before{display:none;}
-.gc-detail .gc-hero-wm{font-size:64px;opacity:.06;letter-spacing:-.05em;}
+.gc-detail .gc-hero-wm{width:132px;height:132px;opacity:.17;}
 .gc-detail .gc-logo{width:30px;height:30px;}
 .gc-detail .gc-team,.games-view .gc-team,.gcm-sheet .gc-team{font-size:19px;font-weight:800;letter-spacing:-.01em;line-height:1.1;}
 .gc-detail .gc-rec{font-size:12px;color:var(--gcmute);font-weight:600;}
@@ -540,7 +550,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-detail .gc-spot{font-size:12px;font-weight:600;color:var(--gcmute);}
 .gc-src{font-size:11px;font-weight:600;color:var(--gcmute);opacity:.75;}
 .gc-detail .gc-to i{width:7px;height:7px;background:#2a3356;} .gc-detail .gc-to i.on{background:#e7ecf7;}
-.gc-detail .gc-ball{color:#fff;}
+.gc-detail .gc-ball{color:#f0a355;} .gc-ball .tc-ico{width:15px;height:15px;}
 /* the odds strip and the line score: tonal, no border */
 .games-view .gc-odds,.gc-detail .gc-odds{border:none;background:var(--gcn2);border-radius:18px;}
 .games-view .gcls-wrap{border:none;background:var(--gcn2);border-radius:18px;}

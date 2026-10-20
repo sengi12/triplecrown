@@ -413,7 +413,7 @@ function gcGameHTML(game, rows, wk){
   const src = game.state==='pre' ? '' : `<div class="gc-src">ESPN</div>`;
   const won = game.state==='post' && game.as!=null && game.hs!=null && game.as!==game.hs ? (game.as>game.hs?'away':'home') : '';
   const hero=`<div class="gc-herowrap"><div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
-      <span class="gc-hero-wm gc-hero-wm-a" aria-hidden="true">${game.away}</span><span class="gc-hero-wm gc-hero-wm-h" aria-hidden="true">${game.home}</span>
+      <img src="${(typeof NFL_LOGO_HI==='function'?NFL_LOGO_HI:NFL_LOGO)(game.away)}" class="gc-hero-wm gc-hero-wm-a" alt="" aria-hidden="true" onerror="this.style.display='none'"><img src="${(typeof NFL_LOGO_HI==='function'?NFL_LOGO_HI:NFL_LOGO)(game.home)}" class="gc-hero-wm gc-hero-wm-h" alt="" aria-hidden="true" onerror="this.style.display='none'">
       <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.away))}</span><span class="gc-rec">${escHtml(game.arec)}</span>${dots(sit&&sit.to?sit.to.away:null)}</div>
       <b class="gc-score gc-score-a">${game.state==='pre'?'':(game.as!=null?game.as:'–')}${ball(game.away)}</b>
       <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}${won?' gc-won-'+won:''}">${mid}</div>${(spot||game.state==='in')?`<div class="gc-spot">${spot}</div>`:''}${src}</div>
@@ -891,12 +891,17 @@ function gcFeedWatchScroll(scroller){
 // feed view padded by the block's height so the plays do not jump up under it.
 function gcFeedPin(fv, on){
   const head=fv.querySelector('.gc-feedview-head'); if(!head) return;
-  if(!on){ head.style.position=''; head.style.top=''; head.style.left=''; head.style.width=''; head.style.zIndex=''; fv.style.paddingTop=''; fv.classList.remove('gc-pinned'); return; }
+  if(!on){ head.style.position=''; head.style.top=''; head.style.left=''; head.style.width=''; head.style.zIndex=''; fv.style.paddingTop=''; fv.style.transition=''; fv.classList.remove('gc-pinned'); if(_gcd.pinT){ clearTimeout(_gcd.pinT); _gcd.pinT=null; } return; }
   if(fv.classList.contains('gc-pinned') && head.style.position==='fixed') return;
   const r=fv.getBoundingClientRect();
   fv.classList.add('gc-pinned');
   head.style.position='fixed'; head.style.top='0px'; head.style.left=r.left+'px'; head.style.width=r.width+'px'; head.style.zIndex='30';
+  // the block is mid-transition when it pins: hold the plays where they are now, then ease
+  // the placeholder down to the block's settled height once it has shrunk
   fv.style.paddingTop=head.getBoundingClientRect().height+'px';
+  fv.style.transition='padding-top .26s ease';
+  if(_gcd.pinT) clearTimeout(_gcd.pinT);
+  _gcd.pinT=setTimeout(()=>{ try{ if(fv.classList.contains('gc-pinned')) fv.style.paddingTop=head.getBoundingClientRect().height+'px'; }catch(e){} }, 340);
 }
 if(typeof window!=='undefined' && window.addEventListener){
   window.addEventListener('resize', ()=>{ try{ if(window.requestAnimationFrame) window.requestAnimationFrame(gcFeedBalance); else gcFeedBalance(); }catch(e){} });
