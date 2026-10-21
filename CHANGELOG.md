@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-20
 
+- fix(game-center): on the phone the pinned score strip no longer vanishes when a play is tapped for replay — the repaint rebuilds the pane with the pinned flag, and the scroll watcher always re-applies it (#204)
 - feat(game-center): on the phone a horizontal swipe across the game's head (hero, field, chart, tabs, or the stuck scoreboard strip at any scroll depth) turns to the next or previous game of the week, the neighbouring panel riding in beside it like a tab page and the page keeping its depth; the games either side are fetched ahead; the week rail no longer yanks the page up on each repaint (#203)
 - fix(game-center): on the phone the field pins itself with position:sticky — the hero scrolls away, the stick part (a slim score strip, the field, the chart, the tabs) never changes height, and the content column and body stop being scroll containers so sticky can work — in place of the hand pin that folded under the finger (#202)
 - fix(game-center): a game, week or tab swapped to lands open at the top of its plays as a cut, never a fold; the short-pane auto-fold is gone — scrolling into the plays folds the block, scrolling back up opens it (#201)

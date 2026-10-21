@@ -5480,7 +5480,7 @@ function gcGameHTML(game, rows, wk){
     const drive=(typeof gcDriveChartHTML==='function') ? gcDriveChartHTML(game, sum) : '';
     const wp=(typeof gcWinProbHTML==='function') ? gcWinProbHTML(game, sum) : '';
     const strip=`<div class="gc-stick-score" aria-hidden="true"><span class="gc-ss-side"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.away))}</span><b class="gc-ss-num">${game.state==='pre'?'':(game.as!=null?game.as:'–')}</b><span class="gc-ss-mid">${mid}</span><b class="gc-ss-num">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}</b><span class="gc-ss-side gc-ss-home">${escHtml(nick(game.home))}<img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'"></span></div>`;
-    return `<div class="gc-feedview${_gcd.condensed?' gc-condensed':''}${_gcd.feedFresh?' gc-notrans':''}"><div class="gc-feedview-head"><div class="gc-head-top">${hero}${oddsHtml}${lastPlay}</div><div class="gc-head-stick">${strip}${drive}${wp}${tabs}</div></div><div class="gc-feedview-feed" onscroll="gcFeedScrolled(this)">${gcFeedHTML(game, sum)}${winbar}</div></div>`;
+    return `<div class="gc-feedview${_gcd.condensed?' gc-condensed':''}${_gcd.stuck?' gc-stuck':''}${_gcd.feedFresh?' gc-notrans':''}"><div class="gc-feedview-head"><div class="gc-head-top">${hero}${oddsHtml}${lastPlay}</div><div class="gc-head-stick">${strip}${drive}${wp}${tabs}</div></div><div class="gc-feedview-feed" onscroll="gcFeedScrolled(this)">${gcFeedHTML(game, sum)}${winbar}</div></div>`;
   }
   const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.away))}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.home))}</button></div>`;
   const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
@@ -6045,7 +6045,9 @@ function gcFeedWatchScroll(scroller){
     const top0=isWin ? 0 : scroller.getBoundingClientRect().top;
     const stickTop=parseFloat((window.getComputedStyle ? window.getComputedStyle(stick).top : '0'))||0;
     const stuck = stick.getBoundingClientRect().top <= top0 + stickTop + 1 && fv.getBoundingClientRect().top < top0 - 8;
-    if(stuck!==!!_gcd.stuck){ _gcd.stuck=stuck; fv.classList.toggle('gc-stuck', stuck); }
+    // Always set the class, not only on a change: a repaint (a play tapped for replay) used
+    // to rebuild the pane without it while the state still said stuck, and the strip vanished.
+    _gcd.stuck=stuck; fv.classList.toggle('gc-stuck', stuck);
   }catch(e){}
 }
 if(typeof window!=='undefined' && window.addEventListener){
