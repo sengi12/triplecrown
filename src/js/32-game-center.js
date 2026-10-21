@@ -682,6 +682,93 @@ function gcmBindSwipe(sheet){
   sheet.addEventListener('touchend', end, {passive:true});
   sheet.addEventListener('touchcancel', end, {passive:true});
 }
+// The Games VIEW's swipe. On the phone a horizontal swipe across the game's head — the
+// hero, the line, the last play, the field, the chart, the Feed|Stats row, and the slim
+// scoreboard strip once the head is stuck — turns to the next or the previous game of the
+// week. The stuck part rides the scroll, so the swipe answers at any depth of the plays;
+// the plays themselves keep scrolling vertically, and the win-probability chart keeps its
+// own scrub (a horizontal drag there names a play). Only games turn here, never the
+// Leaders page: that is the tab row's job. Pure: what a touch at this element starts.
+const GCV_SWIPE_ZONE='.games-view .gc-feedview-head, .games-view .gc-detail > .gc-herowrap, .games-view .gc-detail > .gc-odds, .games-view .gc-detail > .gc-last, .games-view .gc-detail > .gc-drive, .games-view .gc-detail > .gc-wp, .games-view .gc-detail > .gc-tabs';
+const GCV_SWIPE_KEEP='.gc-wp-svg, .gc-wp-call, select, input, button.gc-wp-head';
+function gcvSwipeZone(target){
+  if(!target || !target.closest) return null;
+  if(target.closest(GCV_SWIPE_KEEP)) return null;
+  return target.closest(GCV_SWIPE_ZONE);
+}
+// What a head swipe of dx does: the neighbouring game, or nothing at either end of the week.
+function gcvSwipeAction(dx){ const a=gcmSwipeAction(dx, 'games'); return (a && a.game) ? a : null; }
+const _gcv={swiping:false};
+function gcvBindHeadSwipe(host){
+  if(!host || !host.addEventListener || host._gcvSwipe) return; host._gcvSwipe=true;
+  let x0=null, y0=null, axis=null, zone=null, panel=null, act=null, dx=0;
+  const start=e=>{ const t=e.touches&&e.touches[0]; if(!t || (e.touches.length!==1)) return;
+    zone=gcvSwipeZone(e.target); if(!zone) return;
+    panel=zone.closest('.gc-detail'); if(!panel){ zone=null; return; }
+    x0=t.clientX; y0=t.clientY; axis=null; dx=0; act=null; };
+  const move=e=>{ if(x0==null || !zone) return; const t=e.touches&&e.touches[0]; if(!t) return;
+    const ddx=t.clientX-x0, ddy=t.clientY-y0;
+    if(!axis){
+      if(Math.abs(ddx)<10 && Math.abs(ddy)<10) return;
+      axis = Math.abs(ddx)>Math.abs(ddy) ? 'x' : 'y';
+      if(axis==='x'){
+        act=gcvSwipeAction(Math.sign(ddx)*100); _gcv.swiping=true; _gcm.swiping=true;
+        // The whole panel moves as one layer, and the neighbouring game's panel rides in
+        // beside it under the finger — the app's tab pages, in the Game Center. The
+        // neighbour's stuck block is sticky in its own layer, so deep in the plays it
+        // arrives already pinned at the top, exactly where this game's is.
+        gcmSwipeLayer(panel); panel.classList.add('ts-swipe-dragging');
+        if(act && typeof tsSwipeUnder==='function'){ const under=tsSwipeUnder(panel); under.style.transition='none'; under.innerHTML=gcmSwipePreviewHTML(act);
+          // Deep in the plays this game's strip is showing: the neighbour arrives with its own.
+          try{ const cur=panel.querySelector('.gc-feedview.gc-stuck'), nfv=under.querySelector('.gc-feedview'); if(cur && nfv) nfv.classList.add('gc-stuck'); }catch(e){}
+          // The stuck block pins only within its own pane: make the neighbour's reach past
+          // the bottom of the screen whatever it holds (its plays load once it is picked),
+          // so the block has room to pin at the top beside this one's.
+          try{ const fv=under.querySelector('.gc-feedview'); if(fv) fv.style.minHeight=Math.round((window.scrollY||0)+(window.innerHeight||0)+40)+'px'; }catch(e){} }
+      }
+    }
+    if(axis!=='x') return;
+    e.stopPropagation(); if(e.cancelable) e.preventDefault();          // the head owns this swipe: no page scroll, no tab turn
+    dx=ddx;
+    const w=(typeof tsHostWidth==='function')?tsHostWidth(panel):320;
+    const top=gcmSwipeLayer(panel); top.style.transition='none';
+    // Past the first or last game the panel only leans, and springs back: nowhere to turn.
+    if(act && typeof tsPlacePair==='function') tsPlacePair(panel, Math.sign(dx)*Math.min(w, Math.abs(dx)*0.9), dx<0?-1:1);
+    else top.style.transform=`translateX(${(dx*0.22).toFixed(1)}px)`;
+  };
+  const end=e=>{ if(x0==null) return; const wasX=axis==='x', fdx=dx, a=act, p=panel; x0=null; axis=null; zone=null; panel=null;
+    if(!wasX || !p) return;
+    e.stopPropagation();
+    const w=(typeof tsHostWidth==='function')?tsHostWidth(p):320;
+    const top=gcmSwipeLayer(p), under=p.querySelector(':scope > .ts-swipe-under');
+    const done=()=>{ _gcv.swiping=false; _gcm.swiping=false; };
+    if(a && Math.abs(fdx)>=60){
+      top.style.transition='transform .18s ease-out'; top.style.transform=`translateX(${fdx<0?-w:w}px)`;
+      if(under){ under.style.transition='transform .18s ease-out'; under.style.transform='translateX(0px)'; }
+      setTimeout(()=>{ p.classList.remove('ts-swipe-dragging'); done(); gcvTurn(a.game); }, 170);
+    } else {
+      top.style.transition='transform .16s ease-out'; top.style.transform='translateX(0px)';
+      if(under){ under.style.transition='transform .16s ease-out'; under.style.transform=`translateX(${fdx<0?w:-w}px)`; }
+      setTimeout(()=>{ p.classList.remove('ts-swipe-dragging'); if(under) under.innerHTML=''; top.style.transition=''; done(); if(gcInGamesView()) renderGamesView(); }, 170);
+    }
+  };
+  host.addEventListener('touchstart', start, {passive:true});
+  host.addEventListener('touchmove', move, {passive:false});
+  host.addEventListener('touchend', end, {passive:true});
+  host.addEventListener('touchcancel', end, {passive:true});
+}
+// Turn to the game a head swipe reached. The page keeps its depth: the neighbour's panel
+// that slid in is what the repaint now draws for real, stuck block and all, so the turn
+// is seamless; a game with less to scroll simply clamps to its end.
+function gcvTurn(id){ gcPick(id); }
+// The games either side of the picked one get their summary fetched once, ahead of a swipe,
+// so the panel that slides in carries its field and chart rather than "loading the plays".
+// Once only: a neighbour's live summary is not polled, the pick refreshes it.
+function gcvPrefetchNeighbours(){
+  if(typeof gcSummary!=='function' || typeof _gcd==='undefined') return;
+  const games=gcmCurrentGames()||[]; const i=games.findIndex(g=>g.id===_gc.game); if(i<0) return;
+  for(const g of [games[i-1], games[i+1]]){ if(g && g.eid && !_gcd.sum[g.eid]) { try{ gcSummary(g); }catch(e){} } }
+}
 // The picker bar's live line and the pill both open straight to a game.
 function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; gcFeedReset(); if(gcInGamesView()){ renderGamesView(); return; } if(gcmUseView()){ _gcm.open='closed'; showGamesView(); return; } _gcm.open='full'; renderGamesPhone(); }
 // The mobile bottom bar's Games tab is a full top-level VIEW (like Projections / Rankings /
@@ -715,14 +802,27 @@ function renderGamesView(){
     ? `<div class="gc gcm-leaders">${ldPanelHTML(width, '', false, true)}</div>`
     : gcHTML(true);
   tcMorph(host, `<div class="games-view">${gcmTabsHTML()}${page}</div>`);   // in place: only what moved repaints
+  gcvBindHeadSwipe(host);   // once: the head's swipe between games, delegated so repaints keep it
+  if(tab!=='leaders') gcvPrefetchNeighbours();
+  // Settle the fresh pane after the paint (open, at the top of its plays, strip shown if the
+  // head is already stuck) — a game swapped to deep in the plays used to wait for a scroll.
+  if(typeof gcFeedBalance==='function' && typeof window!=='undefined' && window.requestAnimationFrame) window.requestAnimationFrame(gcFeedBalance);
   const body=host.querySelector('.gc-body'), rail=host.querySelector('.gc-list');
   if(body) body.scrollTop=keep.body;
-  if(rail){ const on=rail.querySelector('.gc-on'); if(on && on.scrollIntoView && !rail0) on.scrollIntoView({block:'nearest', inline:'center'}); else rail.scrollLeft=keep.rail; }
-  const wkOn=host.querySelector('.gc-wk-on'); if(wkOn && wkOn.scrollIntoView) wkOn.scrollIntoView({block:'nearest', inline:'center'});
+  // Centre the picked chips in their rails sideways only: scrollIntoView also scrolls the
+  // PAGE to the rail, which yanked a reader deep in the plays back up on every repaint.
+  if(rail){ const on=rail.querySelector('.gc-on'); if(on && !rail0) gcCentreChip(rail, on); else rail.scrollLeft=keep.rail; }
+  const wkOn=host.querySelector('.gc-wk-on'); if(wkOn) gcCentreChip(wkOn.parentElement, wkOn);
   if(gcWeek()===gcCurWeek() && typeof window!=='undefined' && typeof window.setTimeout==='function'
      && (typeof document==='undefined' || document.visibilityState!=='hidden')){
     _gcm.timer=window.setTimeout(()=>{ _gcm.timer=null; if(gcInGamesView()){ if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', renderGamesView); else renderGamesView(); } }, 61*1000);
   }
+}
+// Scroll a rail sideways so a chip sits in its middle, and nothing else moves.
+function gcCentreChip(rail, chip){
+  if(!rail || !chip || !rail.getBoundingClientRect || !chip.getBoundingClientRect) return;
+  const r=rail.getBoundingClientRect(), c=chip.getBoundingClientRect(); if(!r.width) return;
+  rail.scrollLeft=Math.max(0, (rail.scrollLeft||0)+(c.left+c.width/2)-(r.left+r.width/2));
 }
 // Repaint whichever Game-Center surface is live: the full view, or (legacy) the sheet.
 function gcSheetRepaint(){ if(gcInGamesView()) renderGamesView(); else if(typeof renderGamesPhone==='function') renderGamesPhone(); }
