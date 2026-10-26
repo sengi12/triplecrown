@@ -29,8 +29,8 @@
       "last": 1792491840
     },
     "inseason": {
-      "at": "2026-10-26T06:13:28Z",
-      "last": 1792994793
+      "at": "2026-10-26T12:58:03Z",
+      "last": 1793019075
     },
     "ktc": {
       "at": "2026-08-22T18:54:17Z",
@@ -57,13 +57,13 @@
       "last": 1792871104
     }
   },
-  "updated_at": "2026-10-26T06:13:28Z",
+  "updated_at": "2026-10-26T12:58:03Z",
   "upstream_inseason": {
-    "ftn_charting": "2026-10-25 11:32:03 EDT",
+    "ftn_charting": "2026-10-26 07:01:39 EDT",
     "nextgen_stats": "2026-10-26 02:04:46 EDT",
-    "pbp": "2026-10-26 00:35:18 EDT",
-    "pfr_advstats": "2026-10-23 12:36:01 EDT",
-    "snap_counts": "2026-10-23 07:32:00 EDT"
+    "pbp": "2026-10-26 07:32:19 EDT",
+    "pfr_advstats": "2026-10-26 08:24:06 EDT",
+    "snap_counts": "2026-10-26 07:10:57 EDT"
   },
   "upstream_roster_moves": {
     "draft_picks": "2026-10-21 05:46:14 EDT",
