@@ -6,6 +6,10 @@ this file is the merge history, newest first, one line per PR. Add a line when a
 
 Open work lives in [TODO.md](TODO.md).
 
+## 2026-11-02
+
+- fix(refresh): the seed refresh finishes again — every run since 2026-10-29 was killed at the 90-minute timeout inside the OverTheCap contract-years crawl, because invalidating `contracts` also wiped the per-player page cache and sent ~800 pages to be fetched cold against a site that had slowed down; the cache now keeps the player pages (a deal that moved re-reads itself off its summary key), the crawl has a 15-minute budget and a breaker on refusals, a cache hit no longer waits out the politeness pause (five minutes of every run), and the scrape cache is saved even when a job is cancelled, so a run that hits the wall hands its pages to the next one instead of a cold start (#170)
+
 ## 2026-10-20
 
 - fix(game-center): on the phone the pinned score strip no longer vanishes when a play is tapped for replay — the repaint rebuilds the pane with the pinned flag, and the scroll watcher always re-applies it (#204)

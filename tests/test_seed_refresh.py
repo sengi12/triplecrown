@@ -407,12 +407,35 @@ src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools
 chk("kept_blocks, problems = fallback_blocks(old_seed, new_seed, problems)" in src and "stale = [n for n in stale if n not in held]" in src
     and "json.dump(new_seed, f)" in src, "main(): falls back, writes the merged seed, and does not advance the held sources")
 
+print("=== invalidating contracts keeps the per-player pages ===")
+# cache/contracts/players/ is one page per player, keyed by his summary line, so only a deal
+# that moved re-reads itself. Wiping it with the position tables sent every refresh to fetch
+# ~800 pages cold; once OverTheCap slowed down that outran the job and the refresh looped on
+# the timeout for four days (2026-10-29 → 11-02).
+with tempfile.TemporaryDirectory() as td:
+    _old_cache = SR.CACHE
+    SR.CACHE = td
+    os.makedirs(os.path.join(td, "contracts", "players"))
+    for rel in ("contracts/QB.json", "contracts/WR.json", "contracts/players/joe-burrow-8741.json"):
+        with open(os.path.join(td, rel), "w") as f:
+            f.write("{}")
+    removed = SR.invalidate(SR.SOURCES["contracts"])
+    chk(not os.path.exists(os.path.join(td, "contracts", "QB.json")) and not os.path.exists(os.path.join(td, "contracts", "WR.json")),
+        "the position tables are cleared, so the next build re-reads them")
+    chk(os.path.exists(os.path.join(td, "contracts", "players", "joe-burrow-8741.json")),
+        "the per-player pages survive — a deal that moved re-reads itself off its summary key")
+    chk(sorted(removed) == ["contracts/QB.json", "contracts/WR.json"], f"and the log names exactly what went ({removed})")
+    SR.CACHE = _old_cache
+
 print("=== the stale inputs reach a human ===")
 bs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build_seed.py")).read()
 chk("⚠ HC_PRIOR_JOBS is stale" in bs and "⚠ HC_PLAYCALLERS is stale" in bs, "the build warns when a new head coach has no former-role line, or a playcaller entry names a departed coach")
 wf = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".github", "workflows", "refresh-seed.yml")).read()
 chk("issues: write" in wf and "Flag inputs that need a hand" in wf and "is stale|kept the previous" in wf
     and "gh issue list --state open" in wf and "gh issue create" in wf, "the refresh workflow turns those lines into one open issue, and never a second while one is open")
+chk("actions/cache/restore@v4" in wf and "actions/cache/save@v4" in wf
+    and "if: always() && steps.probe.outputs.stale == 'true'" in wf.split("Save scrape cache")[1][:200],
+    "the scrape cache is saved by an explicit step that runs even when the job is cancelled at its timeout — the pages a crawl did fetch are kept for the next run")
 
 print(f"\nRESULT: {'PASS' if FAILED == 0 else 'MISS'} ({PASS}/{PASS + FAILED} checks)")
 sys.exit(0 if FAILED == 0 else 1)
