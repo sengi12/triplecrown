@@ -162,7 +162,7 @@ jobs:
 
       - name: Restore scrape cache
         if: steps.probe.outputs.stale == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             cache
@@ -323,6 +323,20 @@ jobs:
           _push
           echo "pushed=true" >> "$GITHUB_OUTPUT"
           echo "data=true"   >> "$GITHUB_OUTPUT"
+
+      # Saved by hand, and ALWAYS. actions/cache's own post step is skipped when the job is
+      # cancelled at its timeout — which is exactly when the pages a crawl did manage to fetch
+      # are worth keeping. Without this a run that hit the wall handed the next run a cold
+      # cache, and the refresh went round that loop for four days (2026-10-29 → 11-02).
+      # The restore above pairs with this: restore-keys fall back to the newest save.
+      - name: Save scrape cache
+        if: always() && steps.probe.outputs.stale == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            cache
+            !cache/cfb
+          key: seed-cache-${{ github.run_id }}
 
       # A push made with GITHUB_TOKEN does not fire pages.yml's `on: push`, so kick the
       # deploy explicitly. workflow_dispatch is exempt from the recursion guard.

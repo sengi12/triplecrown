@@ -777,9 +777,12 @@ def parse_otc_contract_years(html, season):
         return {"years": years, "out": out}
     return None
 
-def fetch_otc_contract_years(url, season, summary, refresh):
+def fetch_otc_contract_years(url, season, summary, refresh, live=True):
     """One player's per-year contract table, cached per player; the cache is reused while the
-    player's summary line (apy / total / free-agency year) is unchanged, re-read when it moved."""
+    player's summary line (apy / total / free-agency year) is unchanged, re-read when it moved.
+    With live=False only the cache is consulted (None when it has nothing current). A page
+    that could not be fetched answers False, so the caller can tell a refusal from a player
+    whose page simply carries no table (None)."""
     if not url:
         return None
     slug = _re.sub(r"[^a-z0-9]+", "-", url.strip("/").split("/player/")[-1].lower()).strip("-")
@@ -794,23 +797,81 @@ def fetch_otc_contract_years(url, season, summary, refresh):
                 return {"years": cached.get("years"), "out": cached.get("out")}
         except Exception:
             pass
+    if not live:
+        return None
     html = None
     for attempt in range(2):
         try:
             req = request.Request("https://overthecap.com" + url, headers=UA)
-            with request.urlopen(req, timeout=60) as r:
+            # 30s, not 60: a year table is a nicety the next run can fill in, and two slow
+            # attempts at 60s is four minutes of the crawl's budget spent on one player
+            with request.urlopen(req, timeout=30) as r:
                 html = r.read().decode("utf-8", "replace")
             break
         except Exception:
             time.sleep(2 * (attempt + 1))
     if html is None:
-        return None
+        return False
     parsed = parse_otc_contract_years(html, season)
     if not parsed:
         return None
     with open(cache_path, "w") as f:
         json.dump({"sig": sig, "years": parsed["years"], "out": parsed["out"]}, f)
     return parsed
+
+
+# The crawl is BOUNDED. OverTheCap throttles a datacenter crawler — a position page that took
+# a second in October took twelve by November — and the refresh job has ninety minutes for
+# everything. Eight hundred player pages fetched cold at that pace is the whole job; a run
+# killed at its timeout commits nothing, advances no state and saves no cache, so the next
+# run starts cold again. The refresh went round that loop for four days (2026-10-29 → 11-02)
+# before anyone noticed. So: a time budget for the LIVE fetches, measured from the start of
+# the contracts step so the position pages count too, and a breaker on consecutive refusals.
+# Past either, every remaining player keeps whatever table he has cached and the next run
+# picks up where this one stopped. A cache hit costs nothing and waits for nothing: the
+# politeness pause sits between live requests, not between players — it alone was five
+# minutes of every run, hits included.
+OTC_YEARS_BUDGET_S = 15 * 60
+OTC_YEARS_MAX_MISSES = 8
+OTC_YEARS_PAUSE_S = 0.35
+
+def crawl_contract_years(todo, season, refresh, *, t0=None, budget_s=OTC_YEARS_BUDGET_S,
+                         max_misses=OTC_YEARS_MAX_MISSES, fetch=None, sleep=None, clock=None):
+    """Fill info["years"] / info["out"] for each (key, info) in todo, within the budget.
+    Returns (got, live, stopped): tables filled, pages fetched live, and why the live fetching
+    stopped early (None when it did not). fetch/sleep/clock are injectable for the tests."""
+    fetch = fetch or fetch_otc_contract_years
+    sleep = sleep or time.sleep
+    clock = clock or time.monotonic
+    t0 = clock() if t0 is None else t0
+    got = live = misses = 0
+    stopped = None
+    print(f"  → contract years for {len(todo)} players ...", end="", flush=True)
+    for n, (key, info) in enumerate(todo, 1):
+        detail = fetch(info["url"], season, info, refresh, live=False)
+        if detail is None and stopped is None:
+            spent = clock() - t0
+            if spent > budget_s:
+                stopped = f"time budget ({budget_s // 60} min) spent after {live} live pages"
+            elif misses >= max_misses:
+                stopped = f"{misses} pages in a row would not come"
+            else:
+                if live:
+                    sleep(OTC_YEARS_PAUSE_S)
+                detail = fetch(info["url"], season, info, refresh, live=True)
+                live += 1
+                misses = misses + 1 if detail is False else 0
+        if detail and detail.get("years"):
+            info["years"] = detail["years"]
+            if detail.get("out"):
+                info["out"] = detail["out"]
+            got += 1
+        if n % 100 == 0:
+            print(f" {n} ({(clock() - t0) / 60:.1f}m)", end="", flush=True)
+    print(f" ok ({got} with a year-by-year table · {live} fetched live · {(clock() - t0) / 60:.1f} min)")
+    if stopped:
+        print(f"    stopped early — {stopped}; the rest keep last build's table or wait for the next run")
+    return got, live, stopped
 
 def _otc_money(raw):
     """Parse an OverTheCap dollar cell ('$64,000,000') → int dollars, or None."""
@@ -902,6 +963,7 @@ def _tcMonthAwareYearPy():
 
 def build_contracts(refresh):
     """Build {nameKey: {age, apy, fa, total, gtd, pos}} merged across all positions."""
+    t0 = time.monotonic()
     contracts = {}
     missing = []
     for pos, url in OTC_URLS.items():
@@ -915,22 +977,11 @@ def build_contracts(refresh):
                 continue   # keep the skill-position namesake
             contracts[key] = info
         time.sleep(1.0)    # be polite between position pages; the burst is what gets blocked
-    # the year-by-year table for every fantasy-position player with a page link
+    # the year-by-year table for every fantasy-position player with a page link — bounded by
+    # the budget above, with the clock running since the position pages began
     season = str(SEASON) if "SEASON" in globals() else str(_tcMonthAwareYearPy())
     todo = [(k, v) for k, v in contracts.items() if v.get("pos") in OTC_YEARS_POS and v.get("url")]
-    got = 0
-    print(f"  → contract years for {len(todo)} players ...", end="", flush=True)
-    for n, (key, info) in enumerate(todo, 1):
-        detail = fetch_otc_contract_years(info["url"], season, info, refresh)
-        if detail and detail.get("years"):
-            info["years"] = detail["years"]
-            if detail.get("out"):
-                info["out"] = detail["out"]
-            got += 1
-        if n % 100 == 0:
-            print(f" {n}", end="", flush=True)
-        time.sleep(0.35)
-    print(f" ok ({got} with a year-by-year table)")
+    crawl_contract_years(todo, season, refresh, t0=t0)
     for v in contracts.values():
         v.pop("url", None)   # the link was for the build; the app has no use for it
     if missing:
@@ -954,6 +1005,9 @@ def build_contracts(refresh):
 # it here and bundle the result into the seed. A miss (no match) simply hides the link.
 KTC_URL = "https://keeptradecut.com/dynasty-rankings"
 KTC_POS_KEEP = {"QB", "RB", "WR", "TE"}
+# The ranked dynasty pool runs ~450 deep. Anything near zero means the page moved, not that
+# the site had a quiet week — see build_ktc.
+KTC_MIN_PLAYERS = 100
 
 def _extract_js_array(html, varname):
     """Extract a `var <varname> = [ ... ]` JSON array from page HTML via bracket-counting
@@ -1027,8 +1081,24 @@ def build_ktc(refresh):
         print(f" FAILED ({type(e).__name__}: {e}) — KTC links will be omitted")
         return {}
     out = parse_ktc_players(html)
-    if not out:
-        print(" FAILED (couldn't parse playersArray) — KTC links will be omitted")
+    # A HANDFUL of players is not a success. The page answers 200 and playersArray is still
+    # there, but when KTC renames a field every row fails the pos/slug/name filter and the
+    # parse comes back with two or three stragglers. That printed " ok (2 players)" and
+    # CACHED it — the seed guard caught the 928 → 4 collapse and kept the previous block, so
+    # nothing bad shipped, but the log said the fetch had worked and the poisoned cache was
+    # handed to the next build. The ranked dynasty pool is ~450 deep; a tenth of that is a
+    # shape change, not a quiet week.
+    if len(out) < KTC_MIN_PLAYERS:
+        arr = _extract_js_array(html, "playersArray")
+        n = len(arr) if isinstance(arr, list) else 0
+        # Name what the rows carry NOW, so one refresh log says exactly which field moved and
+        # the fix is a rename rather than another round of guessing at a page we cannot reach.
+        shape = None
+        if isinstance(arr, list) and arr and isinstance(arr[0], dict):
+            shape = sorted(arr[0].keys())[:14]
+        print(f" FAILED (parsed {len(out)} of {n} rows"
+              + (f"; a row now carries {shape}" if shape else "; playersArray not found")
+              + ") — KTC's page shape has moved; links will be omitted until the parser follows it")
         return {}
     print(f" ok ({len(out)} players)")
     with open(cache_path, "w") as f:

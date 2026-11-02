@@ -108,7 +108,13 @@ SOURCES = {
         "why": "KeepTradeCut player id map — only changes as players enter the league",
     },
     "contracts": {
-        "paths": ["contracts"],
+        # The position tables only. cache/contracts/players/ holds one page per player, keyed
+        # by his summary line (APY, total, FA year), so a deal that moved re-reads itself and
+        # the other eight hundred stay put. Wiping the whole directory — which this did until
+        # 2026-11-02 — sent every refresh to fetch all of them cold, and once OverTheCap
+        # slowed down that was more than the job's ninety minutes: the run was killed, no
+        # state advanced, no cache was saved, and the next run did it all again.
+        "paths": ["contracts/*.json"],
         "every": 14 * DAY,
         "why": "OverTheCap contracts — signings land year-round, heaviest in March",
     },
