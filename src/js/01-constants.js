@@ -8,6 +8,11 @@
 const NFL_LOGO = t => (typeof TEAM_LOGO_DATA!=='undefined' && TEAM_LOGO_DATA[t])
   ? TEAM_LOGO_DATA[t]
   : `https://static.www.nfl.com/t_headshot_desktop/f_auto/league/api/clubs/logos/${t==='JAX'?'JAC':t}`;
+// The big one, for a logo drawn past ~60px (the game hero's watermark, the player card's):
+// the 192px tier, else the CDN's 400px original. The 48px icon tier scaled up went soft.
+const NFL_LOGO_HI = t => (typeof TEAM_LOGO_DATA_HI!=='undefined' && TEAM_LOGO_DATA_HI[t])
+  ? TEAM_LOGO_DATA_HI[t]
+  : `https://static.www.nfl.com/t_headshot_desktop/f_auto/league/api/clubs/logos/${t==='JAX'?'JAC':t}`;
 // ESPN college-team logo by ESPN team id (used on rookie player cards' college game logs).
 const NCAA_LOGO = id => `https://a.espncdn.com/i/teamlogos/ncaa/500/${id}.png`;
 // ESPN athlete headshot (fallback when Sleeper has no photo). league = 'nfl' | 'college-football'.

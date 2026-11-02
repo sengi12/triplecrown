@@ -111,5 +111,10 @@ const real=app.chip('AAA', sharpSrc, {});
 chk(real && real.parts.length===6 && real.leagueRank>=1, 'once adv_weekly is in, the badge shows the real six-metric score');
 app.setSeason('2026'); app.setRange(()=>[1,18]);
 
+console.log('=== picked weeks: the Power Score over a set of weeks, not a span ===');
+{ const full=app.table('2026',1,18); const set=app.table('2026',1,18,new Set([1,3]));
+  chk(!!full && (!set || set.weeks.join()==='1,3' || set.weeks.join()==='1'), `with picks the window is the picked weeks only (${set&&set.weeks.join(',')})`);
+  const tr=app.traj('2026',1,18,new Set([1,3]));
+  chk(!tr || Object.values(tr).every(a=>a.every(p=>p.week===1||p.week===3)), 'the trajectory with picks runs over the picked weeks only'); }
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);

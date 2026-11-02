@@ -112,7 +112,10 @@ function ldPoints(rec){
     passing_attempts:s.passing_attempts||s.pass_att||0, passing_completions:s.passing_completions||s.pass_cmp||0,
     rushing_yards:s.rushing_yards||s.rush_yd||0, rushing_tds:s.rush_td||s.rushing_touchdowns||0, rushing_attempts:s.rushing_attempts||s.rush_att||0,
     receptions:s.receptions||s.rec||0, receiving_yards:s.receiving_yards||s.rec_yd||0, receiving_tds:s.rec_td||s.receiving_touchdowns||0,
-    receiving_targets:s.receiving_targets||s.rec_tgt||0, fumbles_lost:s.fumbles_lost||s.fum_lost||0 };
+    receiving_targets:s.receiving_targets||s.rec_tgt||0, fumbles_lost:s.fumbles_lost||s.fum_lost||0,
+    fumbles:s.fumbles||s.fum||0,
+    two_point_conversions:(s.two_point_conversions!=null ? s.two_point_conversions
+      : (s.passing_2pt||s.pass_2pt||0)+(s.rushing_2pt||s.rush_2pt||0)+(s.receiving_2pt||s.rec_2pt||0)) };
   try{ return (typeof calcFpts==='function') ? Number(calcFpts(row)||0) : 0; }catch(e){ return 0; }
 }
 function ldRookie(pid){
@@ -190,6 +193,8 @@ function ldRowsHTML(width, phone){
 }
 // The panel's markup, for either home (the desktop sidebar, the phone's Games sheet).
 // `width` decides the names and the columns; `btns` is the home's own controls.
+// Narrower than this the top row cannot hold the title, the week select and the controls.
+const LD_HEAD_SEL_MIN=290;
 function ldPanelHTML(width, btns, fromLoad, phone){
   const season=String(TC_SEASON.year), cur=ldCurWeek(), wk=ldWeek(), seasonMode=ldSeasonMode();
   const key=`${season}|${seasonMode?'season':wk}`;
@@ -201,9 +206,14 @@ function ldPanelHTML(width, btns, fromLoad, phone){
     <option value="season" ${seasonMode?'selected':''}>Season</option></select>`;
   const posBtns=LD_POS.map(p=>`<button class="ld-pos ${_ld.pos===p?'active':''}" onclick="ldSetPos('${p}')">${p==='ROOKIE'?'RK':p}</button>`).join('');
   const fmt=(typeof scoringSettings!=='undefined' && scoringSettings.baflMode) ? 'BAFL lens' : ((typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) ? escHtml(leagueSnapshot.name) : 'loaded scoring');
-  return `<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${sel}</div>
+  // The Leaders | Game Center toggle and the hide chevron sit in the top row here as they do
+  // in the Game Center, so they never move between the two panes. The week select shares
+  // that row when the panel is wide enough for all three, and otherwise drops to the
+  // scoring line, where the controls used to be.
+  const selTop = !btns || !(width>0) || width>=LD_HEAD_SEL_MIN;
+  return `<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${selTop?sel:''}${btns||''}</div>
     <div class="ld-posrow">${posBtns}</div>
-    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${!seasonMode&&wk===cur?' · live':(seasonMode&&_ld.week==='current'?` · season to date, until week ${cur} kicks off`:'')}</span>${btns||''}</div>
+    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${!seasonMode&&wk===cur?' · live':(seasonMode&&_ld.week==='current'?` · season to date, until week ${cur} kicks off`:'')}</span>${selTop?'':sel}</div>
     <div class="ld-list">${ldRowsHTML(width, phone)}</div>`;
 }
 // Is the phone's Games sheet showing the Leaders? Then the list lives there, not here.
@@ -219,7 +229,8 @@ function renderLeaders(fromLoad){
   el.hidden=false;
   const cur=ldCurWeek(), wk=ldWeek();
   const btns=(typeof rsbButtonsHTML==='function')?rsbButtonsHTML():'';
-  el.innerHTML=ldPanelHTML(ldWidth(el), btns, fromLoad);
+  const grip=(el.querySelector && el.querySelector('.rsb-grip') && typeof rsbGripHTML==='function') ? rsbGripHTML() : '';
+  tcMorph(el, grip+ldPanelHTML(ldWidth(el), btns, fromLoad));   // in place: a minute repaint moves a few numbers, not the panel
   // The week in progress keeps up: a re-render a minute from now re-reads it.
   if(_ld.timer){ clearTimeout(_ld.timer); _ld.timer=null; }
   if(_ld.week!=='season' && wk===cur && typeof window!=='undefined' && typeof window.setTimeout==='function'

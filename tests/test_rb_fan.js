@@ -30,7 +30,7 @@ const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.lo
 
 console.log('=== TEST: RB rushing fan tab wiring ===');
 app.setPlayers({'2':{name:'Joe Mixon',pos:'RB'}});
-app.setNflverse({'2025':{rb_fan:{'joe mixon':{
+const NV0={'2025':{rb_fan:{'joe mixon':{
   team:'HOU',
   totals:{attempts:244,yards:1016,ypc:4.16,success_rate:44.3},
   lanes:{
@@ -49,7 +49,8 @@ app.setNflverse({'2025':{rb_fan:{'joe mixon':{
     RG:{name:'Shaq Mason',run_grade:'B-',pass_grade:'B',pass_snaps:620},
     RT:{name:'Tytus Howard',run_grade:'B',pass_grade:'B-',pass_snaps:610},
   }
-}}}});
+}}}};
+app.setNflverse(NV0);
 chk(app.pcardRbFanAvailable('2'),'RB rushing fan available for player');
 
 app.setPcardState({pid:'2',posc:'RB',isSkill:true});
@@ -82,4 +83,23 @@ const _sc=app.qtrSplits(_cnode, null, 'Carry share by quarter', '· cut', 'desig
 chk(/<label class="qk-hi">Q1<\/label>/.test(_sc) && /<label class="qk-gt">Q4<\/label>/.test(_sc) && /qpc-legend-c/.test(_sc), 'the quarter marker is tinted by competitiveness — Q1 all in reach → green, Q4 garbage time → red — with a small legend');
 chk(!/qk-hi|qk-gt|qpc-legend-c/.test(_sAll), 'a node without competitiveness data → plain markers, no legend');
 
+
+console.log('=== the banner reads the one scorer: the weekly recompute, not the builder\'s season table ===');
+(function(){
+  const pass_cols=['dropbacks','designed_rushes','sacks','times_pressured','times_hit','times_hurried','times_blitzed','non_qb_sacks','no_blitz_pressures','pocket_time_w','pocket_time_att'];
+  const run_cols=['designed_rushes','stuffed','explosive','rush_yards','ybc','yac','broken_tackles','rush_first_downs','ngs_att','roe_w','box8_w','tlos_w','rush_successes','rush_rb_att'];
+  const mk=(st,ry,succ)=>({pass:[[30,30,2,8,3,4,8,1,2,60,25]], run:[[30,st,3,ry,60,90,4,6,30,10,300,60,succ,30]]});
+  const pack={weeks:[1], pass_cols, run_cols, teams:{HOU:mk(2,180,16), KC:mk(6,120,12), DEN:mk(9,90,8)}};
+  const nv=JSON.parse(JSON.stringify(NV0));
+  nv['2025'].ol_weekly=pack;
+  nv['2025'].team={offensive_line_run:{columns:['Run Score'], teams:{HOU:{values:{'Run Score':99}, ranks:{'Run Score':32}}}}};
+  app.setNflverse(nv);
+  const html=app.renderPcardRbFan('2');
+  const m=/Cumulative Run Blocking Score[^:]*: ([\d.]+)<\/b>/.exec(html);
+  chk(m && Number(m[1])!==99 && Number(m[1])>50, `with the weekly sidecar loaded the banner is the recompute's number (${m&&m[1]}), not the season table's 99`);
+  chk(/run-block grades/.test(html) && /same number as the team page/.test(html), 'the banner says the letters are run-block grades and that the number is the team page\'s');
+  delete nv['2025'].ol_weekly; app.setNflverse(nv);
+  const h2=app.renderPcardRbFan('2');
+  chk(/Cumulative Run Blocking Score: 99\.0<\/b>/.test(h2), 'without the weekly sidecar the season table stands in');
+})();
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

@@ -20,7 +20,9 @@ const GC_SUM_TTL_LIVE = 12*1000, GC_SUM_TTL_FINAL = 6*60*60*1000, GC_SUM_TTL_PRE
 // While a picked game is on and the panel is in view, the summary (and the scoreboard) are
 // re-read every GC_LIVE_POLL ms — ESPN posts a play within seconds; the sheet's own 61 s
 // repaint was the ceiling before. One timer, restarted by every repaint.
-const GC_LIVE_POLL = 5*1000;
+// Ten seconds: ESPN posts a play every 20–40 s, and each tick is a scoreboard read plus,
+// while the summary trails the board, a summary read — on a phone the radio is the cost.
+const GC_LIVE_POLL = 10*1000;
 var _gcLiveTimer = null;
 // Change-driven: the scoreboard's situation carries the last play's id. When the picked
 // game's changes, its summary is re-read at once (the plays land within seconds of ESPN
@@ -50,6 +52,10 @@ function gcPanelVisible(){
 function gcLiveTick(game){
   if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; }
   if(!game || game.state!=='in' || !gcPanelVisible()) return;
+  // Nothing while the app is in the background: no reads, no repaints. The visibility
+  // listener below re-arms the loop the moment the screen is back.
+  if(typeof document!=='undefined' && document.visibilityState==='hidden'){ _gcLiveGame=game; return; }
+  _gcLiveGame=game;
   _gcLiveTimer=setTimeout(()=>{
     _gcLiveTimer=null;
     if(typeof _gc==='undefined' || _gc.game!==game.id || !gcPanelVisible()) return;
@@ -58,6 +64,14 @@ function gcLiveTick(game){
     else { try{ gcSummaryCatchUp(game); }catch(e){} }                       // the summary posts a play later than the scoreboard: keep reading until it has it
     gcLiveTick(game);
   }, GC_LIVE_POLL);
+}
+var _gcLiveGame=null;
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState!=='visible' || !_gcLiveGame) return;
+    try{ if(typeof renderRightSidebar==='function') renderRightSidebar(); }catch(e){}   // one repaint with whatever landed, then the loop
+    try{ gcLiveTick(_gcLiveGame); }catch(e){}
+  });
 }
 // The scoreboard names the last play seconds before the summary carries it (verified live:
 // the summary was still on the timeout when the board had the kickoff). A summary read on
@@ -106,10 +120,10 @@ function gcSummaryRepaint(added){
 }
 function gcDetailRepaint(){
   if(typeof renderRightSidebar!=='function') return;
-  const paint=()=>{ if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.gc-feedview-feed','.gc-detail','.gcm-sheet','.gc-body']); else renderRightSidebar(); };
+  const paint=()=>{ gcDetailPaintNow(); if(typeof gcFeedBalance==='function'){ if(window.requestAnimationFrame) window.requestAnimationFrame(gcFeedBalance); else gcFeedBalance(); } };
   if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', paint); else paint();   // never under a finger or an open picker
 }
-function gcdSetTab(t){ _gcd.tab=t; gcDetailRepaint(); }
+function gcdSetTab(t){ _gcd.tab=t; if(typeof gcFeedReset==='function') gcFeedReset(); gcDetailRepaint(); }
 function gcdSetSide(s){ _gcd.side=s; gcDetailRepaint(); }
 function gcdSetFeedAll(v){ _gcd.feedAll=!!v; gcDetailRepaint(); }
 function gcdTab(game){ return _gcd.tab || (game && game.state==='pre' ? 'stats' : 'feed'); }
@@ -120,7 +134,33 @@ function gcReplayPlay(eid, playId){
   if(!eid || !playId) return;
   _gcd.replay={ eid:String(eid), playId:String(playId) };
   if(_gcd.driveSeen) delete _gcd.driveSeen[String(eid)];
-  gcDetailRepaint();
+  // Paint NOW, not when the finger lifts (the idle gate held the replay until the tap ended,
+  // and a second tap on the play already on the field changed no markup at all, so the morph
+  // left the old animation where it was). Then rewind the field's SVG clock so the segment
+  // draws and the ball travels every time, and bring the field into view where it scrolls.
+  gcDetailPaintNow();
+  gcFieldReplayKick();
+}
+function gcDetailPaintNow(){
+  if(typeof renderRightSidebar!=='function') return;
+  const y=(typeof window!=='undefined' && window.scrollY)||0;
+  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.gc-feedview-feed','.gc-detail','.gcm-sheet','.gc-body']); else renderRightSidebar();
+  // the phone's hand-pinned block loses its inline pin to the morph: put it back in the same
+  // frame and hold the page where it was, or the plays jump up under the finger
+  if(_gcd.condensed && typeof gcFeedWatchScroll==='function'){
+    try{ if(window.scrollTo && Math.abs((window.scrollY||0)-y)>4) window.scrollTo(0, y); gcFeedWatchScroll(window); }catch(e){}
+  }
+}
+function gcFieldReplayKick(){
+  const go=()=>{ try{
+    const svg=document.querySelector('.gc-drive-svg');
+    if(svg && typeof svg.setCurrentTime==='function') svg.setCurrentTime(0);
+    // bring the field into view only when it is actually out of it — pinned (desktop window,
+    // phone fixed/sticky block) it already shows, and a scroll would yank the plays away
+    const fld=document.querySelector('.gc-drive');
+    if(fld && fld.scrollIntoView && fld.getBoundingClientRect){ const r=fld.getBoundingClientRect(); const vh=(typeof window!=='undefined' && window.innerHeight)||800; if(r.bottom<0 || r.top>vh) fld.scrollIntoView({block:'nearest', behavior:'smooth'}); }
+  }catch(e){} };
+  if(window.requestAnimationFrame) window.requestAnimationFrame(go); else go();
 }
 function gcReplayClear(){ _gcd.replay=null; gcDetailRepaint(); }
 
@@ -128,7 +168,10 @@ function gcReplayClear(){ _gcd.replay=null; gcDetailRepaint(); }
 // ESPN's play TEXT spells four clubs its own way ("Timeout #1 by CLV", "to HST 21"); the team
 // objects say CLE/BAL/HOU/ARI. Anything read out of the words goes through here before a logo
 // lookup or a side-of-the-field comparison.
-const GC_TEXT_ABBR = { CLV:'CLE', BLT:'BAL', HST:'HOU', ARZ:'ARI' };
+// ESPN's play text spells five clubs differently from its own board: the Rams are "LA" in every
+// "kicks 61 yards from BUF 35 to LA 4", so without this a kick to the Rams' 4 read as a kick to
+// the other club's 4 and landed at the wrong end of the field.
+const GC_TEXT_ABBR = { CLV:'CLE', BLT:'BAL', HST:'HOU', ARZ:'ARI', LA:'LAR' };
 function gcAbbr(ab){ ab=String(ab||'').toUpperCase(); return (typeof TC_BOARD_ABBR!=='undefined' && TC_BOARD_ABBR[ab]) || GC_TEXT_ABBR[ab] || ab; }
 var _gcEspnIdx = null;
 function gcEspnIndex(){
@@ -559,7 +602,7 @@ function gcFeedHTML(game, sum){
     if(p.kind==='timeout' || p.kind==='period') return `<div class="gcf-divider gcf-div-${p.kind}"><span class="gcf-div-l"></span><span class="gcf-div-lbl">${p.toTeam?`<img src="${NFL_LOGO(p.toTeam)}" class="gcf-div-logo" onerror="this.style.display='none'">`:''}${escHtml(p.title)}${(p.clock && p.kind==='timeout')?`<span class="gcf-div-clock">${escHtml((p.q?('Q'+p.q+' '):'')+p.clock)}</span>`:''}</span><span class="gcf-div-l"></span></div>`;
     if(p.kind==='half' || p.kind==='final'){
       const sc=(p.as!=null && p.hs!=null) ? `${game.away} ${p.as}<span class="gcf-dash">–</span>${p.hs} ${game.home}` : '';
-      return `<div class="gcf-row gcf-phase gcf-${p.kind}${isNew(p)?' gcf-new':''}">
+      return `<div class="gcf-row gcf-phase gcf-${p.kind}${isNew(p)?' gcf-new':''}"${p.id?` data-key="${escAttr(String(p.id))}"`:''}>
         <span class="gcf-ava gcf-ava-ico">${p.kind==='half'?'½':'🏁'}</span>
         <div class="gcf-main"><div class="gcf-sit">${p.kind==='half'?'Halftime':'Final'}</div><div class="gcf-title">${escHtml(p.title)}</div></div>
         <div class="gcf-right"><div class="gcf-clock">${p.q?`Q${p.q}`:''} ${escHtml(p.clock)}</div><div class="gcf-score">${sc}</div></div>
@@ -580,7 +623,7 @@ function gcFeedHTML(game, sum){
     if(p.xtra) notes.push(`<span class="gcf-note gcf-xtra gcf-xtra-${p.xtra.ok?'ok':'no'}">${p.xtra.ok?'✅':'❌'} ${p.xtra.t==='XP'?'Extra point':'Two-point try'} ${p.xtra.ok?'good':'no good'}</span>`);
     if(p.yac>0) notes.push(`<span class="gcf-note gcf-yac">🏃 ${p.yac} yd${p.yac===1?'':'s'} after catch</span>`);
     if(p.conv) notes.push(`<span class="gcf-note gcf-conv gcf-conv-${p.conv.ok?'ok':'no'}" title="${escAttr(p.team)} ${p.conv.d===3?'third':'fourth'} downs converted so far">${p.conv.ok?'🎯':'🚫'} ${escHtml(p.team)} ${p.conv.d===3?'3rd':'4th'} down ${p.conv.m}/${p.conv.t}</span>`);
-    return `<div class="gcf-row gcf-${p.kind}${isNew(p)?' gcf-new':''}${p.id?' gcf-click':''}${active?' gcf-active':''}"${rowClick}>
+    return `<div class="gcf-row gcf-${p.kind}${isNew(p)?' gcf-new':''}${p.id?' gcf-click':''}${active?' gcf-active':''}"${p.id?` data-key="${escAttr(String(p.id))}"`:''}${rowClick}>
       ${ava}
       <div class="gcf-main">
         <div class="gcf-sit">${escHtml(sit)}${rz?' <span class="gcf-rz">RZ</span>':''}</div>
@@ -735,7 +778,7 @@ function gcDrives(sum){
       const kind=gcPlayKind(p); if(kind==='skip' || GC_PAUSE_KINDS.has(kind)) return;
       plays.push({ id:pid, kind, type:String((p.type&&p.type.text)||''), text:String(p.text||''), yds:Number(p.statYardage||0),
         yac:(p.yardsAfterCatch!=null && p.yardsAfterCatch!=='')?Number(p.yardsAfterCatch):null,
-        yte:(p.start && p.start.yardsToEndzone!=null)?Number(p.start.yardsToEndzone):null, scoring:!!p.scoringPlay, turnover:!!p.isTurnover,
+        yte:(p.start && p.start.yardsToEndzone!=null)?Number(p.start.yardsToEndzone):null, spot:String((p.start&&p.start.possessionText)||''), scoring:!!p.scoringPlay, turnover:!!p.isTurnover,
         q:Number((p.period&&p.period.number)||0), clock:String((p.clock&&p.clock.displayValue)||'') });
     });
     out.push({ id, team, plays, result:String(d.result||d.shortDisplayResult||''), desc:String(d.description||''), score:!!d.isScore, live:!!live,
@@ -936,7 +979,7 @@ function gcPuntRead(text, offense){
 }
 function gcDriveChartHTML(game, sum){
   const d=gcDriveInView(game, sum); if(!d) return '';
-  const G=_gcFieldGeom(); const {W, top, bot, xAt, lane}=G; const H=138;
+  const G=_gcFieldGeom(); const {W, top, bot, xAt, lane}=G; const H=126;   // the label under the field ends at bot+18 (118); no idle band below it
   const f1=(v)=>(+v).toFixed(1);
   const away=game.away, home=game.home;
   const opp = d.team===home ? away : home;
@@ -1002,7 +1045,13 @@ function gcDriveChartHTML(game, sum){
   }
   // the drive: the snap spots in order (kickoffs are not offensive snaps and never join them),
   // then the last play's own move
-  const spots=d.plays.filter(p=>p.yte!=null && p.type!=='Kickoff').map(p=>({p, yd:100-p.yte}));
+  // Where each snap was, in the offense's own yards. The words ("LAR 13") are read first:
+  // ESPN's yardsToEndzone on a punt is sometimes the RECEIVING club's (13 at the Rams' own 13,
+  // where the kicking club's view is 87), which put the kick's snap at the wrong end of the
+  // field — the drive line stretched across the whole field to a spot the ball never was,
+  // and the kick arced from there. yardsToEndzone stands in only when the words are missing.
+  const snapYd=(p)=>{ const s=p.spot ? _gcSpotYd(p.spot, d.team) : null; return s!=null ? s : (p.yte!=null ? 100-p.yte : null); };
+  const spots=d.plays.filter(p=>p.type!=='Kickoff').map(p=>({p, yd:snapYd(p)})).filter(s=>s.yd!=null);
   // the newest play is a kickoff: it stands on its own (kickoffs never join the snap line),
   // drawn like a punt from where it was kicked — a spot at the kicking spot carries it in
   const rawLast=d.plays.length?d.plays[d.plays.length-1]:null;
@@ -1042,7 +1091,10 @@ function gcDriveChartHTML(game, sum){
       // the kick flies from the snap to where it was fielded (always), then a return runs back
       // the other way only when the returner actually gained ground
       big=true;
-      const xLand=X(punt.landYd), kickSeg=Object.assign(quad(x0,xLand,26), {cls:' gc-seg-kick'});
+      // a punt hangs high: the arc rises with the distance, and its peak (half the control
+      // point's lift) clears the field's top edge but stays under the yard numbers — a throw's
+      // peak stays inside the field
+      const xLand=X(punt.landYd), kickSeg=Object.assign(quad(x0,xLand,Math.min(90, Math.max(72, Math.abs(xLand-x0)*0.55))), {cls:' gc-seg-kick'});
       const returned=(punt.outcome==='return'||punt.outcome==='returnTd'||punt.outcome==='fumbleLost') && punt.returnYds>0;
       endX=X(punt.endYd);
       if(returned){ pre=kickSeg; fin=Object.assign(line(xLand,endX), {cls:' gc-seg-ret'}); retCol='#39c15a'; }
@@ -1055,7 +1107,7 @@ function gcDriveChartHTML(game, sum){
       // the kick flies from the kicking spot down to where it was fielded, then the return the
       // other way — the receiving team's own advance (green), only drawn when it gained ground
       big=true;
-      const xLand=X(koData.landYd), kickSeg=Object.assign(quad(x0,xLand,26), {cls:' gc-seg-kick'});
+      const xLand=X(koData.landYd), kickSeg=Object.assign(quad(x0,xLand,Math.min(82, Math.max(66, Math.abs(xLand-x0)*0.46))), {cls:' gc-seg-kick'});   // high like a punt, a little under
       const returned=(koData.outcome==='return'||koData.outcome==='returnTd'||koData.outcome==='fumbleLost') && koData.returnYds>0;
       endX=X(koData.endYd);
       if(returned){ pre=kickSeg; fin=Object.assign(line(xLand,endX), {cls:' gc-seg-ret'}); retCol='#39c15a'; }
@@ -1200,6 +1252,9 @@ function gcDriveChartHTML(game, sum){
 // — and a tap opens the chart: the away club at the top, the home club at the bottom (their
 // marks on the axis), the line running toward whoever is winning with the winner's side
 // filled in the winner's colour.
+// one geometry for the chart, the tap and the marker: the line runs L..R, the labels sit
+// to the right of R
+const GC_WP_GEOM={W:360, H:84, L:0, R:294, top:10, bot:74};
 function gcWinProbToggle(){ _gcd.wpOpen=!_gcd.wpOpen; gcDetailRepaint(); }
 function gcWinProbHTML(game, sum){
   const wp=(sum && Array.isArray(sum.winprobability)) ? sum.winprobability.filter(w=>w && w.homeWinPercentage!=null) : [];
@@ -1209,26 +1264,146 @@ function gcWinProbHTML(game, sum){
   const nums=`<span class="gc-wp-n"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'"><b>${away}%</b></span><span class="gc-wp-n"><b>${home}%</b><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>`;
   const head=`<button class="gc-wp-head" onclick="gcWinProbToggle()" aria-expanded="${open?'true':'false'}" title="Win probability, play by play — ESPN's model"><span class="gc-wp-lbl">Win probability</span>${nums}<span class="rt-gp-caret">${open?'▴':'▾'}</span></button>`;
   if(!open) return `<div class="gc-wp">${head}</div>`;
-  const W=360, H=72, L=0, R=330, top=8, bot=64, f1=(v)=>(+v).toFixed(1);
+  const {W,H,L,R,top,bot}=GC_WP_GEOM, f1=(v)=>(+v).toFixed(1);
   const x=(i)=>L+(R-L)*(n===1?0:i/(n-1)); const y=(h)=>top+(bot-top)*Math.max(0, Math.min(1, h));   // home at the bottom
   const pts=wp.map((w,i)=>`${f1(x(i))},${f1(y(w.homeWinPercentage))}`);
   const col=(t)=>(typeof pwTeamColor==='function' ? pwTeamColor(t) : '#3d9bff');
   // the line's height from the top IS the home side's share: the region above it is the
   // home share, below it the away share — the winner's share is filled in the winner's
-  // colour, so a 100% finish fills the whole chart
+  // colour, bright at the line and fading toward the far edge, so a 100% finish fills the
+  // whole chart
   const homeWinning = last>=0.5;
+  const leadCol=col(homeWinning?game.home:game.away), gid=`gcWpG${String(game.eid||'')}`;
+  const grad=`<linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${escAttr(leadCol)}" stop-opacity="${homeWinning?'0.18':'0.92'}"/><stop offset="1" stop-color="${escAttr(leadCol)}" stop-opacity="${homeWinning?'0.92':'0.18'}"/></linearGradient>`;
   const fill = homeWinning
-    ? `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${top} L${f1(x(0))},${top} Z" fill="${escAttr(col(game.home))}" opacity="0.22"/>`
-    : `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${bot} L${f1(x(0))},${bot} Z" fill="${escAttr(col(game.away))}" opacity="0.22"/>`;
+    ? `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${top} L${f1(x(0))},${top} Z" fill="url(#${gid})"/>`
+    : `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${bot} L${f1(x(0))},${bot} Z" fill="url(#${gid})"/>`;
+  const grid=[0.25,0.5,0.75].map(h=>`<line x1="${L}" y1="${f1(y(h))}" x2="${R}" y2="${f1(y(h))}" stroke="#7d88a6" stroke-width="${h===0.5?1:0.8}" stroke-dasharray="2 4" opacity="${h===0.5?0.6:0.35}"/>`).join('');
+  const nick=(t)=>{ const nm=(typeof TEAM_NAMES!=='undefined' && TEAM_NAMES && TEAM_NAMES[t]) ? String(TEAM_NAMES[t]) : ''; const i=nm.lastIndexOf(' '); return i>0 ? nm.slice(i+1) : t; };
+  const labels=`<text x="${R+8}" y="${top+9}" class="gc-wp-lab">${away}%</text><text x="${R+8}" y="${top+20}" class="gc-wp-lab2">${escHtml(nick(game.away))}</text>
+      <text x="${R+8}" y="${bot-11}" class="gc-wp-lab">${home}%</text><text x="${R+8}" y="${bot}" class="gc-wp-lab2">${escHtml(nick(game.home))}</text>`;
+  const now=`<line x1="${f1(x(n-1))}" y1="${top}" x2="${f1(x(n-1))}" y2="${bot}" stroke="#c9d2e6" stroke-width="1" opacity="0.7"/>`;
+  // A tap on the line names the play behind that point (gcWinProbTap); the index built here
+  // is what the tap reads, and a pick already made survives the repaint.
+  const eid=String(game.eid||'');
+  gcWinProbIndex(eid, game, sum, wp);
+  const pick=(_gcd.wpPick && _gcd.wpPick[eid]!=null && _gcd.wpPick[eid]<n) ? _gcd.wpPick[eid] : null;
+  const info=(pick!=null) ? gcWinProbInfo(eid, pick) : null;
+  const mark = info ? `<g class="gc-wp-mark"><line x1="${f1(x(pick))}" y1="${top}" x2="${f1(x(pick))}" y2="${bot}" stroke="#fff" stroke-width="1" stroke-dasharray="2 3" opacity="0.8"/><circle cx="${f1(x(pick))}" cy="${f1(y(wp[pick].homeWinPercentage))}" r="4" fill="${escAttr(col(info.side))}" stroke="#fff" stroke-width="1.6"/></g>` : '<g class="gc-wp-mark"></g>';
   return `<div class="gc-wp gc-wp-open">${head}
-    <svg viewBox="0 0 ${W} ${H}" class="gc-wp-svg" role="img" aria-label="Win probability">
-      <image href="${escAttr(NFL_LOGO(game.away))}" x="${R+8}" y="${top-2}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
-      <image href="${escAttr(NFL_LOGO(game.home))}" x="${R+8}" y="${bot-16}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
-      ${fill}
-      <line x1="${L}" y1="${f1(y(0.5))}" x2="${R}" y2="${f1(y(0.5))}" stroke="#5a6270" stroke-width="1" stroke-dasharray="3 4"/>
-      <polyline points="${pts.join(' ')}" fill="none" stroke="#f2f5f8" stroke-width="1.6" stroke-linejoin="round"/>
-      <circle cx="${f1(x(n-1))}" cy="${f1(y(last))}" r="3.2" fill="#fff"/>
-    </svg><div class="gc-wp-src">ESPN's model · ${escHtml(game.away)} at the top, ${escHtml(game.home)} at the bottom</div></div>`;
+    <svg viewBox="0 0 ${W} ${H}" class="gc-wp-svg" role="img" aria-label="Win probability, play by play — tap a point for the play">
+      <defs>${grad}</defs>
+      ${fill}${grid}${now}
+      <polyline points="${pts.join(' ')}" fill="none" stroke="#f6f8fb" stroke-width="1.8" stroke-linejoin="round"/>
+      <circle cx="${f1(x(n-1))}" cy="${f1(y(last))}" r="3.6" fill="#fff" stroke="#0f1631" stroke-width="1.2"/>
+      ${labels}
+      ${mark}
+      <rect class="gc-wp-hit" x="${L}" y="0" width="${R-L}" height="${H}" fill="transparent" onpointerdown="gcWinProbTap(event,'${eid}')" onpointermove="gcWinProbTap(event,'${eid}')"/>
+    </svg>${info?gcWinProbCalloutHTML(info, x(pick)/W, eid):''}<div class="gc-wp-src">ESPN's model · ${escHtml(game.away)} at the top, ${escHtml(game.home)} at the bottom · tap the line for the play</div></div>`;
+}
+// ── A tap on the line names the play ───────────────────────────────────────────
+// Every point on ESPN's line is a play (its playId). The index pairs each point with the
+// play's words, quarter, clock, the score as it stood and whose ball it was, so a spike in
+// the middle of the game can be read: tap it, and the bubble says what happened there and
+// how far the line moved. Dragging across the chart scrubs; a tap on the bubble closes it.
+function gcWinProbIndex(eid, game, sum, wp){
+  if(!_gcd.wpPts) _gcd.wpPts={};
+  const plays={};
+  try{
+    const drives=(typeof gcDrives==='function') ? gcDrives(sum) : [];
+    drives.forEach(d=>(d.plays||[]).forEach(p=>{ plays[String(p.id)]={type:p.type, text:p.text, yds:p.yds, q:p.q, clock:p.clock, team:d.team}; }));
+    const raw=[].concat(((sum.drives||{}).previous)||[], (sum.drives||{}).current ? [sum.drives.current] : []);
+    raw.forEach(d=>(d.plays||[]).forEach(p=>{ const k=String(p.id); if(!plays[k]) plays[k]={type:String((p.type&&p.type.text)||''), text:String(p.text||''), yds:Number(p.statYardage||0), q:Number((p.period&&p.period.number)||0), clock:String((p.clock&&p.clock.displayValue)||''), team:''}; if(p.homeScore!=null) plays[k].hs=Number(p.homeScore); if(p.awayScore!=null) plays[k].as=Number(p.awayScore); }));
+  }catch(e){}
+  _gcd.wpPts[eid]={pts:wp.map(w=>({h:Number(w.homeWinPercentage), pid:String(w.playId||'')})), plays, home:game.home, away:game.away};
+  return _gcd.wpPts[eid];
+}
+// What a point says: the favoured side and its chance there, the move from the point before,
+// and the play — null when there is no such point.
+function gcWinProbInfo(eid, i){
+  const ix=_gcd.wpPts && _gcd.wpPts[String(eid)]; if(!ix) return null;
+  i=Number(i); const pt=ix.pts[i]; if(!pt) return null;
+  const prev=i>0 ? ix.pts[i-1].h : pt.h;
+  const homeSide = pt.h>=0.5;
+  const side = homeSide ? ix.home : ix.away;
+  const pct = Math.round((homeSide ? pt.h : 1-pt.h)*100);
+  const delta = Math.round(((homeSide ? pt.h-prev : prev-pt.h))*100);   // in the favoured side's terms
+  const p=ix.plays[pt.pid]||null;
+  let title='';
+  if(p){
+    try{ title=(typeof lfReadPlay==='function') ? (lfReadPlay({id:pt.pid, type:p.type, text:p.text, yds:p.yds, team:p.team, athletes:[]}).title||'') : ''; }catch(e){ title=''; }
+    if(!title) title=String(p.text||'').slice(0,60);
+  }
+  return {i, n:ix.pts.length, side, pct, delta, title, q:p?p.q:0, clock:p?p.clock:'', team:p?p.team:'', hs:p&&p.hs!=null?p.hs:null, as:p&&p.as!=null?p.as:null, home:ix.home, away:ix.away, hasPlay:!!p};
+}
+function gcWinProbCalloutHTML(info, xFrac, eid){
+  const when=info.q?`Q${info.q}${info.clock?' '+escHtml(info.clock):''}`:'';
+  const score=(info.hs!=null && info.as!=null)?`${escHtml(info.away)} ${info.as}–${info.hs} ${escHtml(info.home)}`:'';
+  const move=info.delta ? `<span class="gc-wp-move ${info.delta>0?'gc-wp-up':'gc-wp-dn'}">${info.delta>0?'+':'−'}${Math.abs(info.delta)}</span>` : '';
+  const what=info.hasPlay ? escHtml(info.title) : 'a play ESPN did not describe';
+  return `<div class="gc-wp-call${xFrac>0.6?' gc-wp-call-r':(xFrac<0.3?' gc-wp-call-l':'')}" style="left:${(xFrac*100).toFixed(2)}%" onclick="gcWinProbClose(event,'${escAttr(String(eid||''))}')" role="status">
+    <span class="gc-wp-c1">${[when,score].filter(Boolean).join(' · ')}</span>
+    <span class="gc-wp-c2">${what}</span>
+    <span class="gc-wp-c3"><img src="${escAttr(NFL_LOGO(info.side))}" class="gc-glogo" onerror="this.style.display='none'"> <b>${info.pct}%</b>${move}</span>
+  </div>`;
+}
+function gcWinProbTap(ev, eid){
+  try{
+    if(ev.type==='pointermove' && !(ev.buttons&1)) return;   // a drag scrubs; a hover does nothing
+    const ix=_gcd.wpPts && _gcd.wpPts[String(eid)]; if(!ix || !ix.pts.length) return;
+    const rect=ev.currentTarget, svg=rect.ownerSVGElement||rect.closest('svg'); if(!svg) return;
+    let vx;
+    if(svg.createSVGPoint && svg.getScreenCTM){ const pt=svg.createSVGPoint(); pt.x=ev.clientX; pt.y=ev.clientY; vx=pt.matrixTransform(svg.getScreenCTM().inverse()).x; }
+    else { const r=svg.getBoundingClientRect(); vx=(ev.clientX-r.left)/Math.max(1,r.width)*360; }
+    const {L,R}=GC_WP_GEOM, n=ix.pts.length;
+    const i=Math.max(0, Math.min(n-1, Math.round((vx-L)/(R-L)*(n-1))));
+    if(!_gcd.wpPick) _gcd.wpPick={};
+    if(ev.type==='pointerdown' && _gcd.wpPick[String(eid)]===i){ gcWinProbClose(ev, eid); return; }   // the same point again: off
+    _gcd.wpPick[String(eid)]=i;
+    if(ev.preventDefault && ev.type==='pointerdown') ev.preventDefault();
+    // painted in place, not through the pane's repaint: that one waits for the finger to
+    // lift, and a drag across the chart should read as it goes
+    gcWinProbPaintPick(rect.closest('.gc-wp'), eid);
+    // and the field jumps to the play: the drive up to it, the play itself drawn — the
+    // same pin a tap on the feed makes (the pane repaints when the finger lifts)
+    gcWinProbJump(eid, i);
+    if(ev.type==='pointerdown'){ try{ const fld=rect.closest('.gc-detail, .gcm-sheet, body').querySelector('.gc-drive'); if(fld && fld.scrollIntoView) fld.scrollIntoView({block:'nearest', behavior:'smooth'}); }catch(e){} }
+  }catch(e){}
+}
+// Pin the field to the play behind point i — only when that play is in a drive the chart can
+// draw; a point ESPN gave no play for leaves the field where it is.
+function gcWinProbJump(eid, i){
+  const ix=_gcd.wpPts && _gcd.wpPts[String(eid)]; const pt=ix && ix.pts[Number(i)]; if(!pt || !pt.pid) return false;
+  const c=_gcd.sum && _gcd.sum[String(eid)]; const sum=c && c.data; if(!sum) return false;
+  if(!gcReplayDrive(sum, pt.pid)) return false;
+  _gcd.replay={ eid:String(eid), playId:String(pt.pid) };
+  if(_gcd.driveSeen) delete _gcd.driveSeen[String(eid)];
+  gcDetailRepaint();
+  return true;
+}
+function gcWinProbPaintPick(wrap, eid){
+  if(!wrap) return;
+  const ix=_gcd.wpPts && _gcd.wpPts[String(eid)]; if(!ix) return;
+  const svg=wrap.querySelector('.gc-wp-svg'), g=svg && svg.querySelector('.gc-wp-mark'), old=wrap.querySelector('.gc-wp-call');
+  const i=_gcd.wpPick ? _gcd.wpPick[String(eid)] : null;
+  if(i==null || !ix.pts[i]){ if(g) g.innerHTML=''; if(old) old.remove(); return; }
+  const n=ix.pts.length, {W,L,R,top,bot}=GC_WP_GEOM, f1=(v)=>(+v).toFixed(1);
+  const x=L+(R-L)*(n===1?0:i/(n-1)), y=top+(bot-top)*Math.max(0, Math.min(1, ix.pts[i].h));
+  const info=gcWinProbInfo(eid, i); if(!info) return;
+  const col=(t)=>(typeof pwTeamColor==='function' ? pwTeamColor(t) : '#3d9bff');
+  if(g) g.innerHTML=`<line x1="${f1(x)}" y1="${top}" x2="${f1(x)}" y2="${bot}" stroke="#fff" stroke-width="1" stroke-dasharray="2 3" opacity="0.8"/><circle cx="${f1(x)}" cy="${f1(y)}" r="4" fill="${escAttr(col(info.side))}" stroke="#fff" stroke-width="1.6"/>`;
+  const html=gcWinProbCalloutHTML(info, x/W, eid);
+  if(old) old.outerHTML=html; else if(svg) svg.insertAdjacentHTML('afterend', html);
+}
+function gcWinProbClose(ev, eid){
+  try{ if(ev && ev.stopPropagation) ev.stopPropagation(); }catch(e){}
+  if(_gcd.wpPick) delete _gcd.wpPick[String(eid)];
+  // the field comes back to the live (or latest) drive with the bubble
+  if(_gcd.replay && String(_gcd.replay.eid)===String(eid)){ _gcd.replay=null; gcDetailRepaint(); }
+  try{
+    const hit=document.querySelector(`.gc-wp-hit[onpointerdown*="'${String(eid)}'"]`);
+    gcWinProbPaintPick(hit ? hit.closest('.gc-wp') : null, eid);
+  }catch(e){ gcDetailRepaint(); }
 }
 // Sleeper's bottom bar: each club's chance to win as a pill, the logo on the outside. Sticks
 // to the bottom of the feed while there is a feed to scroll.

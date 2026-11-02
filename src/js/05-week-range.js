@@ -43,6 +43,20 @@ function setSharedWeekRange(team, season, lo, hi){
   _sharedWeekRangeByTeam[key] = [Math.min(a,b), Math.max(a,b)];
   return _sharedWeekRangeByTeam[key];
 }
+// The picked games ride beside the range, under the same key, so a pick made on the
+// Passing tab is the pick the Receiving tab, the Adv Metrics card and the Power Score see.
+// The league-wide card picks under its own key (ADV_LEAGUE_RANGE_KEY), season by season.
+let _sharedWeekPicksByTeam = {};  // `${season}:${TEAM}` -> [wk, ...] sorted
+function getSharedWeekPicks(team, season){
+  const v=_sharedWeekPicksByTeam[_sharedWeekRangeKey(team, season)];
+  return (Array.isArray(v) && v.length) ? v.slice() : null;
+}
+function setSharedWeekPicks(team, season, weeks){
+  const key=_sharedWeekRangeKey(team, season);
+  const arr=Array.isArray(weeks) ? [...new Set(weeks.map(Number).filter(w=>w>=1 && w<=18))].sort((a,b)=>a-b) : [];
+  if(arr.length) _sharedWeekPicksByTeam[key]=arr; else delete _sharedWeekPicksByTeam[key];
+  return arr.length ? arr : null;
+}
 
 // ── Weekly schedule lookup for slider opponent rails ───────────────────────
 // Runtime-only (no seed change): fetch nflverse schedule CSV once per season and build
@@ -73,6 +87,17 @@ function _csvRow(line){
   out.push(cur);
   return out;
 }
+// games.csv gains a week of scores every Monday, so it is re-validated on every load (the
+// browser sends its ETag; GitHub answers 304 when nothing changed). Only when that request
+// fails — offline — does the cached copy serve. It used to be force-cache, and a browser that
+// had cached the file before the season's scores existed never saw a result again.
+async function _fetchWeeklySchedule(){
+  try{
+    const r = await fetch(WEEKLY_SCHEDULE_URL, {cache:'no-cache'});
+    if(r && r.ok) return r;
+  }catch(e){}
+  return fetch(WEEKLY_SCHEDULE_URL, {cache:'force-cache'});
+}
 async function ensureWeeklyOppSchedule(season){
   const s=String(season||'');
   if(!/^\d{4}$/.test(s)) return false;
@@ -80,29 +105,11 @@ async function ensureWeeklyOppSchedule(season){
   if(_weeklyOppPromise[s]) return _weeklyOppPromise[s];
   _weeklyOppPromise[s] = (async()=>{
     try{
-      const r = await fetch(WEEKLY_SCHEDULE_URL, {cache:'force-cache'});
-      if(!r.ok) return false;
+      const r = await _fetchWeeklySchedule();
+      if(!r || !r.ok) return false;
       const txt = await r.text();
-      const lines = txt.split(/\r?\n/).filter(Boolean);
-      if(!lines.length) return false;
-      const hdr = _csvRow(lines[0]);
-      const ix={}; hdr.forEach((h,i)=>{ ix[h]=i; });
-      const need=['season','game_type','week','home_team','away_team'];
-      if(need.some(k=>ix[k]==null)) return false;
-
-      const map={};
-      for(let i=1;i<lines.length;i++){
-        const row=_csvRow(lines[i]);
-        if(String(row[ix.season])!==s) continue;
-        if(String(row[ix.game_type]||'').toUpperCase()!=='REG') continue;
-        const wk=parseInt(row[ix.week],10);
-        if(!Number.isFinite(wk) || wk<1 || wk>18) continue;
-        const home=_schedTeamCode(row[ix.home_team]);
-        const away=_schedTeamCode(row[ix.away_team]);
-        if(!home || !away) continue;
-        (map[home]=map[home]||{})[wk]={opp:away, home:true};
-        (map[away]=map[away]||{})[wk]={opp:home, home:false};
-      }
+      const map=_parseWeeklySchedule(txt, s);
+      if(!map) return false;
       _weeklyOppBySeason[s]=map;
       if(typeof renderContent==='function') renderContent();
       return true;
@@ -114,6 +121,35 @@ async function ensureWeeklyOppSchedule(season){
   // clear the cached promise on a false/rejected result so the next caller retries.
   _weeklyOppPromise[s].then(ok=>{ if(!ok) delete _weeklyOppPromise[s]; }, ()=>{ delete _weeklyOppPromise[s]; });
   return _weeklyOppPromise[s];
+}
+// games.csv → { TEAM -> { week -> {opp, home, pf, pa, res} } } for one season. The scores
+// ride along once a game is played (nflverse fills home_score / away_score the same night),
+// which is what the W / L marks on a picked game read.
+function _parseWeeklySchedule(txt, season){
+  const s=String(season||'');
+  const lines = String(txt||'').split(/\r?\n/).filter(Boolean);
+  if(!lines.length) return null;
+  const hdr = _csvRow(lines[0]);
+  const ix={}; hdr.forEach((h,i)=>{ ix[h]=i; });
+  const need=['season','game_type','week','home_team','away_team'];
+  if(need.some(k=>ix[k]==null)) return null;
+  const map={};
+  for(let i=1;i<lines.length;i++){
+    const row=_csvRow(lines[i]);
+    if(String(row[ix.season])!==s) continue;
+    if(String(row[ix.game_type]||'').toUpperCase()!=='REG') continue;
+    const wk=parseInt(row[ix.week],10);
+    if(!Number.isFinite(wk) || wk<1 || wk>18) continue;
+    const home=_schedTeamCode(row[ix.home_team]);
+    const away=_schedTeamCode(row[ix.away_team]);
+    if(!home || !away) continue;
+    const hs=(ix.home_score!=null) ? Number(row[ix.home_score]) : NaN, as=(ix.away_score!=null) ? Number(row[ix.away_score]) : NaN;
+    const played = Number.isFinite(hs) && Number.isFinite(as) && String(row[ix.home_score]).trim()!=='' && String(row[ix.away_score]).trim()!=='';
+    const res=(pf,pa)=> !played ? '' : (pf>pa ? 'W' : pf<pa ? 'L' : 'T');
+    (map[home]=map[home]||{})[wk]=Object.assign({opp:away, home:true}, played?{pf:hs, pa:as, res:res(hs,as)}:{});
+    (map[away]=map[away]||{})[wk]=Object.assign({opp:home, home:false}, played?{pf:as, pa:hs, res:res(as,hs)}:{});
+  }
+  return map;
 }
 function weekOpponentMap(team, season){
   const s=String(season||'');
@@ -135,6 +171,11 @@ function renderWeekOpponentRail(team, season, className=''){
   const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(s):18;
   const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(s, tm):maxWk;
   const span=Math.max(1,maxWk-1);
+  // The rail is a picker on the projections page and on the Adv Metrics card alike: a played
+  // game is a tap, every scored game wears its result — green W, red L — and the rest dim
+  // while a pick is on. The pick is shared, so both cards show the same one.
+  const pickable = className==='wr-opp-main' || className==='wr-opp-adv';
+  const picks = pickable ? weekPicks(tm, s) : null;
   for(let wk=1; wk<=maxWk; wk++){
     const m=byWeek[wk];
     const ratio=((wk-1)/span).toFixed(6);
@@ -147,24 +188,178 @@ function renderWeekOpponentRail(team, season, className=''){
     const opp=String(m.opp).toUpperCase();
     const logo=(typeof NFL_LOGO==='function') ? NFL_LOGO(opp) : '';
     const ha=m.home?'vs':'@';
-    cells.push(`<div class="wr-opp-cell${laneCls}" style="left:${pos}" title="Week ${wk}: ${ha} ${opp}">
+    const score = m.res ? ` · ${m.res} ${m.pf}-${m.pa}` : '';
+    const canPick = pickable && wk<=played;
+    const on = picks && picks.has(wk);
+    // Every played game wears its result — green W, red L — picked or not; a pick adds the
+    // ring and dims the rest, so the record reads at a glance and the pick still stands out.
+    const pickCls = canPick ? ' wr-pickable' + (on ? ' wr-picked' : (picks && picks.size ? ' wr-dim' : '')) + (m.res ? ` wr-res-${m.res}` : '') : '';
+    const tap = canPick ? ` role="button" tabindex="0" onclick="weekPickToggle('${tm}',${wk},event,'${s}')" onkeydown="if(event.key==='Enter'||event.key===' '){weekPickToggle('${tm}',${wk},event,'${s}');}"` : '';
+    cells.push(`<div class="wr-opp-cell${laneCls}${pickCls}" style="left:${pos}" title="Week ${wk}: ${ha} ${opp}${score}${canPick?(on?' · tap to drop':' · tap to filter to this game'):''}"${tap}>
       <span class="wr-opp-stem"></span>
-      ${logo?`<img src="${logo}" class="wr-opp-logo" alt="${opp}" onerror="this.style.display='none'">`:`<span class="wr-opp-fallback">${opp}</span>`}
+      <span class="wr-opp-ico">${logo?`<img src="${logo}" class="wr-opp-logo" alt="${opp}" onerror="this.style.display='none'">`:`<span class="wr-opp-fallback">${opp}</span>`}${(canPick && m.res)?`<span class="wr-res wr-res-badge" aria-label="${m.res==='W'?'Win':m.res==='L'?'Loss':'Tie'}">${m.res}</span>`:''}</span>
     </div>`);
   }
   return `<div class="wr-opp-rail ${className}">${cells.join('')}</div>`;
 }
+// ── Picked games: a week or several, filtered to on a tap ───────────────────
+// Click a game on the rail (or its chip on a phone) and the page filters to that week; click
+// more to add them; click anywhere off the card to clear. The picks ride the same filtered
+// data the span slider builds, through a set of weeks instead of a range.
+// The picks for a team (or the league key) in a season: the shared store first, else the
+// projections state of the season on screen (which is also what the store mirrors into).
+function weekPicks(team, season){
+  const tm=String(team||'').toUpperCase();
+  const s=String(season==null ? (typeof activeSeason!=='undefined' ? activeSeason : '') : season);
+  const shared=getSharedWeekPicks(tm, s);
+  if(shared) return new Set(shared);
+  const st=(typeof userProj!=='undefined' && userProj && typeof activeSeason!=='undefined' && s===String(activeSeason)) ? userProj[tm] : null;
+  return (st && Array.isArray(st.weekPick) && st.weekPick.length) ? new Set(st.weekPick) : new Set();
+}
+// Does this (team, season) drive the projections view — the one whose filtered data
+// applyWeekRange builds? Anything else (the Adv card on the projection view, the league
+// key, a past season's card) only needs the shared state and a repaint.
+function _weekPickDrivesProj(team, season){
+  return typeof activeSeason!=='undefined' && String(season)===String(activeSeason)
+    && typeof userProj!=='undefined' && !!(userProj && userProj[team]);
+}
+function weekPickToggle(team, wk, ev, season){
+  try{ if(ev && ev.stopPropagation) ev.stopPropagation(); }catch(e){}
+  team=String(team||'').toUpperCase(); wk=Number(wk); if(!team || !wk) return;
+  const s=String(season==null ? (typeof activeSeason!=='undefined' ? activeSeason : '') : season);
+  const set=weekPicks(team, s);
+  if(set.has(wk)) set.delete(wk); else set.add(wk);
+  if(!set.size){ weekPickClear(team, s); return; }
+  const weeks=[...set].sort((a,b)=>a-b);
+  setSharedWeekPicks(team, s, weeks);
+  setSharedWeekRange(team, s, weeks[0], weeks[weeks.length-1]);
+  if(_weekPickDrivesProj(team, s)){
+    userProj[team].weekPick=weeks;
+    applyWeekRange(team, weeks[0], weeks[weeks.length-1], set);
+  } else if(typeof renderContent==='function') renderContent();
+}
+function weekPickClear(team, season){
+  team=String(team||'').toUpperCase();
+  const s=String(season==null ? (typeof activeSeason!=='undefined' ? activeSeason : '') : season);
+  setSharedWeekPicks(team, s, null);
+  if(_weekPickDrivesProj(team, s)){
+    userProj[team].weekPick=null;
+    resetWeekRange(team);
+  } else {
+    setSharedWeekRange(team, s, 1, 18);
+    if(typeof renderContent==='function') renderContent();
+  }
+}
+// The phone's card is compact — the slider and its rail — until a tap inside it opens the
+// row of game chips; a tap on a thumb, a chip, a game or the reset link is its own thing.
+let _wrChipsOpen=false;
+function weekCardTap(ev){
+  const t=ev && ev.target;
+  if(t && t.closest && t.closest('.wr-chip, .wr-opp-cell, .week-range-reset, input, .tc-info-pop, #tcInfoPop')) return;
+  const card=(t && t.closest) ? t.closest('.week-range-card') : null; if(!card) return;
+  _wrChipsOpen=!card.classList.contains('wr-open');
+  card.classList.toggle('wr-open', _wrChipsOpen);
+  const more=card.querySelector('.wr-more'); if(more) more.textContent=_wrChipsOpen?'hide ▴':'games ▾';
+}
+// A click on the page's open space clears the picks — the "click off when you're done".
+// A tab, a button, a link, a menu or the sidebar is never "off": the pick has to survive a
+// walk from Passing to Receiving to Adv Metrics, which is the point of sharing it.
+const WR_CLICK_OFF_KEEP='.week-range-card, .wr-chips, .tc-info-pop, #tcInfoPop, button, a, select, input, textarea, label, [role="button"], [role="tab"], [onclick], .tabs, .sub-tabs, .phase-tabs, .sidebar, .topbar, header, nav';
+function weekPickClickOff(e){
+  try{
+    const t=e.target;
+    if(t && t.closest && t.closest(WR_CLICK_OFF_KEEP)) return;
+    const cards=(typeof document!=='undefined' && document.querySelectorAll) ? document.querySelectorAll('.week-range-card[data-wr-team]') : [];
+    let any=false;
+    Array.from(cards).forEach(c=>{
+      const tm=c.getAttribute('data-wr-team'), s=c.getAttribute('data-wr-season');
+      if(tm && s && weekPicks(tm, s).size){ any=true; weekPickClear(tm, s); }
+    });
+    return any;
+  }catch(err){ return false; }
+}
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('click', weekPickClickOff, true);
+}
+// ── The week-range card: one builder, one class, for every surface ──────────────
+// The projections tabs, a team's Adv Metrics card and the league-wide Advanced page all
+// draw THIS card. What differs rides in on cfg — the ids the drag handlers update, the
+// handlers themselves, the rail (opponents with their W or L, or the week numbers), and
+// whether a pick is a game or a week. Edit the card here and every slider changes with it.
+//   cfg: {team, season, lo, hi, maxWk, played, active, loading, league, idPrefix,
+//         onDrag(which) -> js, onCommit -> js, onReset -> js, rail -> html, chips: bool}
+function weekRangeCardHTML(cfg){
+  const team=String(cfg.team||'').toUpperCase(), season=String(cfg.season||'');
+  const league=!!cfg.league, px=cfg.idPrefix||'wr';
+  const maxWk=cfg.maxWk||18, played=(cfg.played!=null)?cfg.played:maxWk, span=Math.max(1,maxWk-1);
+  const lo=Math.min(cfg.lo||1, played), hi=Math.min(cfg.hi||maxWk, played);
+  const loPct=(lo-1)/span*100, hiPct=(maxWk-hi)/span*100;
+  const dead = played<maxWk ? `<div class="dual-slider-dead" style="left:${((played-1)/span*100).toFixed(2)}%" title="Weeks ${played+1}–${maxWk}: not played yet"></div>` : '';
+  const picked=[...weekPicks(team, season)].sort((a,b)=>a-b);
+  const open=(typeof _wrChipsOpen!=='undefined' && _wrChipsOpen);
+  const what=league?'week':'game';
+  const help=`drag either end to zoom into a stretch of ${what}s · or tap a ${what} below to filter to it`;
+  const icon=(typeof TC_ICON==='function')?TC_ICON('calendar'):'';
+  return `<div class="week-range-card${open?' wr-open':''}" data-wr-team="${team}" data-wr-season="${season}" onclick="weekCardTap(event)">
+    <div class="week-range-label">
+      <span>${icon} Filter weeks: <b id="${px}-lo-${team}">${lo}</b> – <b id="${px}-hi-${team}">${hi}</b>${played<maxWk?` <span class="week-range-hint">of ${played} played</span>`:''}${cfg.loading?' <span class="week-range-loading">loading…</span>':''}</span>
+      ${cfg.active?`<span class="week-range-reset" onclick="${cfg.onReset}">↺ Reset to full season</span>`:`<span class="week-range-hint week-range-help">${help}</span>`}
+      <span class="wr-more" aria-hidden="true">${open?'hide ▴':`${what}s ▾`}</span>
+    </div>
+    ${picked.length?`<div class="week-range-picked">Picked ${what}${picked.length>1?'s':''}: <b>wk ${picked.join(', ')}</b> · click off to clear</div>`:''}
+    <div class="dual-slider">
+      <div class="dual-slider-track"></div>
+      ${dead}<div class="dual-slider-fill" id="${px}-fill-${team}" style="left:${loPct}%;right:${hiPct}%"></div>
+      <input type="range" min="1" max="${maxWk}" step="1" value="${lo}" class="dual-range dual-range-lo" oninput="${cfg.onDrag('lo')}" onchange="${cfg.onCommit}">
+      <input type="range" min="1" max="${maxWk}" step="1" value="${hi}" class="dual-range dual-range-hi" oninput="${cfg.onDrag('hi')}" onchange="${cfg.onCommit}">
+      ${cfg.rail||''}
+    </div>
+    ${cfg.chips===false?'':weekPickChipsHTML(team, season)}
+  </div>`;
+}
+// The phone's way in: a game is too small a target on the rail, so a row of chips — week,
+// opponent, the result — carries the same taps at thumb size.
+function weekPickChipsHTML(team, season){
+  const tm=String(team||'').toUpperCase(); const s=String(season||'');
+  const league = typeof ADV_LEAGUE_RANGE_KEY!=='undefined' && tm===ADV_LEAGUE_RANGE_KEY;
+  const byWeek=league ? null : weekOpponentMap(tm, s);
+  if(!league && !byWeek) return '';
+  const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(s, league?null:tm):18;
+  const picks=weekPicks(tm, s);
+  const chips=[];
+  for(let wk=1; wk<=played; wk++){
+    const on=picks.has(wk);
+    if(league){   // the league-wide card: a week is a week, no opponent to name
+      chips.push(`<button type="button" class="wr-chip${on?' wr-picked':''}" onclick="weekPickToggle('${tm}',${wk},event,'${s}')" title="Week ${wk}"><b>${wk}</b> wk</button>`);
+      continue;
+    }
+    const m=byWeek[wk]; if(!m || !m.opp) continue;
+    chips.push(`<button type="button" class="wr-chip${on?' wr-picked':''}${m.res?` wr-res-${m.res}`:''}" onclick="weekPickToggle('${tm}',${wk},event,'${s}')" title="Week ${wk}: ${m.home?'vs':'@'} ${m.opp}${m.res?` · ${m.res} ${m.pf}-${m.pa}`:''}"><b>${wk}</b> ${m.home?'vs':'@'} ${escHtml(String(m.opp))}${m.res?`<span class="wr-res">${m.res}</span>`:''}</button>`);
+  }
+  if(!chips.length) return '';
+  return `<div class="wr-chips">${chips.join('')}${picks.size?`<button type="button" class="wr-chip wr-chip-clear" onclick="weekPickClear('${tm}','${s}')">clear</button>`:''}</div>`;
+}
 
-function renderWeekNumberRail(className=''){
+// opts.pickTeam (with opts.season) makes the numbers taps — the league-wide card's picker,
+// where a week is a week: the picked ones ring, the rest dim while a pick is on.
+function renderWeekNumberRail(className='', opts){
+  opts=opts||{};
   const cells=[];
-  const maxWk=(typeof tcSeasonMaxWeek==='function' && typeof activeSeason!=='undefined')?tcSeasonMaxWeek(activeSeason):18;
-  const played=(typeof tcSeasonPlayedWeek==='function' && typeof activeSeason!=='undefined')?tcSeasonPlayedWeek(activeSeason):maxWk;
+  const s=(opts.season!=null) ? String(opts.season) : ((typeof activeSeason!=='undefined')?activeSeason:undefined);
+  const maxWk=(typeof tcSeasonMaxWeek==='function' && s!==undefined)?tcSeasonMaxWeek(s):18;
+  const played=(typeof tcSeasonPlayedWeek==='function' && s!==undefined)?tcSeasonPlayedWeek(s):maxWk;
   const span=Math.max(1,maxWk-1);
+  const pickTeam=opts.pickTeam ? String(opts.pickTeam).toUpperCase() : '';
+  const picks=pickTeam ? weekPicks(pickTeam, s) : null;
   for(let wk=1; wk<=maxWk; wk++){
     const ratio=((wk-1)/span).toFixed(6);
     const pos=`calc(var(--wr-pad, 0px) + (100% - (2 * var(--wr-pad, 0px))) * ${ratio})`;
     const laneCls = ((wk%2===0) ? ' wr-week-top' : ' wr-week-bottom') + (wk>played ? ' wr-unplayed' : '');
-    cells.push(`<div class="wr-week-cell${laneCls}" style="left:${pos}" title="Week ${wk}">
+    const canPick = !!pickTeam && wk<=played;
+    const on = canPick && picks.has(wk);
+    const pickCls = canPick ? ' wr-pickable' + (on ? ' wr-picked' : (picks.size ? ' wr-dim' : '')) : '';
+    const tap = canPick ? ` role="button" tabindex="0" onclick="weekPickToggle('${pickTeam}',${wk},event,'${s}')" onkeydown="if(event.key==='Enter'||event.key===' '){weekPickToggle('${pickTeam}',${wk},event,'${s}');}"` : '';
+    cells.push(`<div class="wr-week-cell${laneCls}${pickCls}" style="left:${pos}" title="Week ${wk}${canPick?(on?' · tap to drop':' · tap to filter to this week'):''}"${tap}>
       <span class="wr-week-stem"></span>
       <span class="wr-week-num">${wk}</span>
     </div>`);
@@ -174,12 +369,13 @@ function renderWeekNumberRail(className=''){
 
 // Sum one player's weekly rows between fromWk..toWk (inclusive), restricted to the
 // given team (so a trade mid-window doesn't blend two teams' stats together).
-function sumWeeklyRange(weekly, team, fromWk, toWk){
+function sumWeeklyRange(weekly, team, fromWk, toWk, weeks){
   const out = {receiving_targets:0, receptions:0, receiving_yards:0, receiving_tds:0,
                rushing_attempts:0, rushing_yards:0, rushing_tds:0, games_played:0};
   for(const wk in (weekly||{})){
     const wn = parseInt(wk);
     if(isNaN(wn) || wn<fromWk || wn>toWk) continue;
+    if(weeks && weeks.size && !weeks.has(wn)) continue;   // picked games: only those weeks
     const row = weekly[wk];
     if(!row || typeof row!=='object' || row.team!==team) continue;
     const s = row.stats||{};
@@ -197,12 +393,13 @@ function sumWeeklyRange(weekly, team, fromWk, toWk){
 
 // QB version of sumWeeklyRange: passing + rushing totals over the requested window, restricted
 // to the same team so a traded player's split doesn't blend multiple rosters together.
-function sumWeeklyRangeQB(weekly, team, fromWk, toWk){
+function sumWeeklyRangeQB(weekly, team, fromWk, toWk, weeks){
   const out = {pass_yards:0, pass_att:0, pass_td:0, comp:0, pass_int:0,
                rush_att:0, rush_yards:0, rush_td:0, games_played:0};
   for(const wk in (weekly||{})){
     const wn = parseInt(wk);
     if(isNaN(wn) || wn<fromWk || wn>toWk) continue;
+    if(weeks && weeks.size && !weeks.has(wn)) continue;
     const row = weekly[wk];
     if(!row || typeof row!=='object' || row.team!==team) continue;
     const s = row.stats||{};
@@ -222,7 +419,7 @@ function sumWeeklyRangeQB(weekly, team, fromWk, toWk){
 // Fetch + cache weekly data for every WR/RB/TE on a team's roster (reference season),
 // then build {player_id -> filtered totals} for the given week window. Players whose
 // fetch fails just fall back to season totals (handled by the caller).
-async function buildWeekFilterData(team, season, fromWk, toWk){
+async function buildWeekFilterData(team, season, fromWk, toWk, weeks){
   const roster=[...getBase(team,'WR'),...getBase(team,'TE'),...getBase(team,'RB')]
     .filter(p=>p.player_id);
   const results = await Promise.allSettled(
@@ -231,14 +428,14 @@ async function buildWeekFilterData(team, season, fromWk, toWk){
   const data={};
   for(const r of results){
     if(r.status!=='fulfilled'||!r.value||!r.value.weekly) continue;
-    data[r.value.pid]=sumWeeklyRange(r.value.weekly, team, fromWk, toWk);
+    data[r.value.pid]=sumWeeklyRange(r.value.weekly, team, fromWk, toWk, weeks);
   }
   return data;
 }
 
 // Per-QB filtered totals for the active week window. The passing/rushing tabs already use the
 // aggregated QB pool; this finer map powers the QB phase itself and the 17-game pace tooltip.
-async function buildWeekFilterQBData(team, season, fromWk, toWk){
+async function buildWeekFilterQBData(team, season, fromWk, toWk, weeks){
   const qbs=getBase(team,'QB').filter(p=>p.player_id);
   const results = await Promise.allSettled(
     qbs.map(p=>fetchPlayerWeekly(p.player_id, season).then(w=>({pid:p.player_id, weekly:w})))
@@ -246,14 +443,14 @@ async function buildWeekFilterQBData(team, season, fromWk, toWk){
   const data={};
   for(const r of results){
     if(r.status!=='fulfilled'||!r.value||!r.value.weekly) continue;
-    data[r.value.pid]=sumWeeklyRangeQB(r.value.weekly, team, fromWk, toWk);
+    data[r.value.pid]=sumWeeklyRangeQB(r.value.weekly, team, fromWk, toWk, weeks);
   }
   return data;
 }
 
 // Same idea for the team's QB(s) — used ONLY to keep the receiving-yards-available pool
 // sane while a week window is active (does not touch the QB tab/editing state at all).
-async function buildWeekFilterQBPool(team, season, fromWk, toWk){
+async function buildWeekFilterQBPool(team, season, fromWk, toWk, weeks){
   const qbs=getBase(team,'QB').filter(p=>p.player_id);
   const results = await Promise.allSettled(
     qbs.map(p=>fetchPlayerWeekly(p.player_id, season).then(w=>({pid:p.player_id, weekly:w})))
@@ -263,6 +460,7 @@ async function buildWeekFilterQBPool(team, season, fromWk, toWk){
     if(r.status!=='fulfilled'||!r.value||!r.value.weekly) continue;
     for(const wk in r.value.weekly){
       const wn=parseInt(wk); if(isNaN(wn)||wn<fromWk||wn>toWk) continue;
+      if(weeks && weeks.size && !weeks.has(wn)) continue;
       const row=r.value.weekly[wk];
       if(!row||typeof row!=='object'||row.team!==team) continue;
       const s=row.stats||{};
@@ -574,8 +772,10 @@ function historicalTagContext(base, team, season){
 }
 
 // Kick off a week-range fetch+recompute+rerender. Called when the slider is released.
-async function applyWeekRange(team, fromWk, toWk){
+async function applyWeekRange(team, fromWk, toWk, weeks){
   const state=userProj[team]; if(!state) return;
+  if(!(weeks && weeks.size)){ state.weekPick=null; setSharedWeekPicks(team, activeSeason, null); }   // the slider's span replaces any picked games
+  else { state.weekPick=[...weeks].sort((a,b)=>a-b); setSharedWeekPicks(team, activeSeason, state.weekPick); }
   setSharedWeekRange(team, activeSeason, fromWk, toWk);
   state.weekFilter=[fromWk,toWk];
   state.weekFilterLoading=true;
@@ -585,9 +785,9 @@ async function applyWeekRange(team, fromWk, toWk){
   renderContent();
   try{
     const [skillData, qbPool, qbData] = await Promise.all([
-      buildWeekFilterData(team, activeSeason, fromWk, toWk),
-      buildWeekFilterQBPool(team, activeSeason, fromWk, toWk),
-      buildWeekFilterQBData(team, activeSeason, fromWk, toWk),
+      buildWeekFilterData(team, activeSeason, fromWk, toWk, weeks),
+      buildWeekFilterQBPool(team, activeSeason, fromWk, toWk, weeks),
+      buildWeekFilterQBData(team, activeSeason, fromWk, toWk, weeks),
     ]);
     if(seq !== state._wfSeq) return;   // superseded by a newer range
     // If all player fetches were blocked (CORS / offline), skillData will be empty.
@@ -616,8 +816,8 @@ async function applyWeekRange(team, fromWk, toWk){
 }
 function resetWeekRange(team){
   const state=userProj[team]; if(!state) return;
-  setSharedWeekRange(team, activeSeason, 1, 18);
-  state.weekFilter=null; state.weekFilterData=null; state.weekFilterQBPool=null; state.weekFilterQBData=null;
+  setSharedWeekRange(team, activeSeason, 1, 18); setSharedWeekPicks(team, activeSeason, null);
+  state.weekFilter=null; state.weekPick=null; state.weekFilterData=null; state.weekFilterQBPool=null; state.weekFilterQBData=null;
   state.passing_shares=null; state.rushing.shares=null;
   initPassingShares(team); initRushingShares(team);
   renderContent();

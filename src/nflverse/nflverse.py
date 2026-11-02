@@ -1950,7 +1950,7 @@ _RB_COLS = ["season_type", "game_id", "play_id", "rusher_player_id", "rusher_pla
             "receiver_player_id", "receiver_player_name", "rush", "pass", "rush_attempt",
             "rushing_yards", "rush_touchdown", "epa", "success", "first_down_rush",
             "tackled_for_loss", "complete_pass", "receiving_yards", "yards_after_catch",
-            "pass_touchdown", "posteam"]
+            "pass_touchdown", "posteam", "td_player_id"]
 
 def sumer_rb(season, min_rush=40, refinement=None):
     min_rush = _scaled_min(min_rush, 5)
@@ -2010,7 +2010,7 @@ def sumer_rb(season, min_rush=40, refinement=None):
             "First Down %": round(d["first_down_rush"].mean() * 100, 2),
             "Receptions": int(len(rec)),
             "Rec. Yards": int(rec["receiving_yards"].sum()),
-            "Rec. TDs": int(rec["pass_touchdown"].sum()),
+            "Rec. TDs": int(_receiver_td(rec).sum()),
             "YAC": int(rec["yards_after_catch"].sum()),
             "Target Share": round(player_tgts.get(rid, 0) / team_tgts.get(player_team.get(rid), 1) * 100, 2) if rid in player_team else None,
         }
@@ -2023,7 +2023,19 @@ def sumer_rb(season, min_rush=40, refinement=None):
 _ROUTES_CACHE, _POS_CACHE, _CTX_CACHE = {}, {}, {}
 _REC_COLS = ["season_type", "game_id", "play_id", "receiver_player_id", "complete_pass",
              "receiving_yards", "yards_after_catch", "air_yards", "pass_touchdown", "epa",
-             "posteam", "pass"]
+             "posteam", "pass", "td_player_id"]
+
+def _receiver_td(frame):
+    """1 where the targeted receiver himself scored. `pass_touchdown` flags the PLAY, and a
+    completion lateralled on for the score (Purdy to Evans, lateral to Samuel, 2026 wk 3)
+    is a passing TD for the QB and a receiving TD for the lateral man — not for the man
+    targeted. nflverse names the scorer in td_player_id; a frame without it (older caches,
+    the synthetic test frames) keeps the play flag."""
+    td = pd.to_numeric(frame["pass_touchdown"], errors="coerce").fillna(0) == 1
+    if "td_player_id" in frame.columns:
+        scorer = frame["td_player_id"]
+        td = td & (scorer.isna() | (scorer == frame["receiver_player_id"]))
+    return td.astype(int)
 _WRTE_COLS = ["Routes Run", "Receptions", "Rec. Yards", "Target Share", "Touchdowns",
               "YAC", "ADoT", "Catch %", "Contested Catches", "Drops", "Total EPA",
               "Targets/Route Run", "YPRR"]
@@ -2222,7 +2234,7 @@ def _receivers(season, min_targets=15, refinement=None):
             "Receptions": rec,
             "Rec. Yards": ry,
             "Target Share": round(tgts / team_tgts.get(team, 1) * 100, 2) if team else None,
-            "Touchdowns": int(d["pass_touchdown"].sum()),
+            "Touchdowns": int(_receiver_td(d).sum()),
             "YAC": int(d["yards_after_catch"].sum()),
             "ADoT": round(d["air_yards"].mean(), 2),
             "Catch %": round(rec / tgts * 100, 2),
@@ -2259,14 +2271,15 @@ def route_trees(season, min_routes=12):
     per-route receiving outputs (TD/rec/yds/PPR FP) for richer route-tree displays."""
     pbp = _load_pbp(season, [
         "game_id", "play_id", "season_type", "receiver_player_id", "pass_touchdown",
-        "complete_pass", "receiving_yards"
+        "complete_pass", "receiving_yards", "td_player_id"
     ])
     pbp = pbp[(pbp["season_type"] == "REG") & pbp["receiver_player_id"].notna()]
     part = _aux_csv(PART_URL.format(season=season),
                     usecols=["nflverse_game_id", "play_id", "route"])
     m = pbp.merge(part, left_on=["game_id", "play_id"],
                   right_on=["nflverse_game_id", "play_id"], how="left")
-    m = m[m["route"].notna()]
+    m = m[m["route"].notna()].copy()
+    m["rec_td"] = _receiver_td(m)
     names, pos = _name_map(season), _pos_map(season)
     out = {}
     for rid, d in m.groupby("receiver_player_id"):
@@ -2274,13 +2287,13 @@ def route_trees(season, min_routes=12):
         if not name or len(d) < min_routes:
             continue
         tree = d["route"].value_counts().to_dict()
-        route_tds = d.groupby("route")["pass_touchdown"].sum().to_dict()
+        route_tds = d.groupby("route")["rec_td"].sum().to_dict()
         route_rec = d.groupby("route")["complete_pass"].sum().to_dict()
         route_yds = d.groupby("route")["receiving_yards"].sum().to_dict()
         out[name] = {
             "pos": pos.get(rid),
             "total": int(len(d)),
-            "total_tds": int(d["pass_touchdown"].sum()),
+            "total_tds": int(d["rec_td"].sum()),
             "total_rec": int(d["complete_pass"].sum()),
             "total_yds": int(d["receiving_yards"].sum()),
             "tree": {k: int(v) for k, v in tree.items()},
@@ -2935,6 +2948,7 @@ def routes_weekly(season, min_routes_game=3):
     pbp = _load_pbp(season, [
         "game_id", "play_id", "season_type", "week", "defteam",
         "receiver_player_id", "pass_touchdown", "complete_pass", "receiving_yards",
+        "td_player_id",
     ])
     pbp = pbp[(pbp["season_type"] == "REG") & pbp["receiver_player_id"].notna()]
     part = _aux_csv(PART_URL.format(season=season),
@@ -2944,6 +2958,7 @@ def routes_weekly(season, min_routes_game=3):
     m = m[m["route"].notna()].copy()
     if m.empty:
         return {}
+    m["rec_td"] = _receiver_td(m)
     m["defteam"] = m["defteam"].replace(NFLVERSE_TO_SEED)
     names, pos = _name_map(season), _pos_map(season)
     out = {}
@@ -2959,7 +2974,7 @@ def routes_weekly(season, min_routes_game=3):
                 "tgt": int(len(rg)),
                 "rec": int(rg["complete_pass"].sum()),
                 "yds": int(rg["receiving_yards"].fillna(0).sum()),
-                "td": int(rg["pass_touchdown"].sum()),
+                "td": int(rg["rec_td"].sum()),
             }
         node = out.setdefault(name, {"pos": pos.get(rid), "games": []})
         node["games"].append({
@@ -3106,13 +3121,14 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         "pass_attempt", "complete_pass", "air_yards", "pass_location",
         "receiving_yards", "pass_touchdown", "two_point_attempt",
         "yards_after_catch", "epa", "first_down", "interception",
-        "yardline_100", "qtr", "shotgun", "out_of_bounds", "wp",
+        "yardline_100", "qtr", "shotgun", "out_of_bounds", "wp", "td_player_id",
     ])
     t = pbp[pbp["season_type"].isin(["REG", "POST"]) & (pbp["pass_attempt"] == 1)
             & (pbp["two_point_attempt"] == 0) & pbp["receiver_player_id"].notna()
             & pbp["pass_location"].notna()].copy()
     if t.empty or not (t["season_type"] == "REG").any():
         return {}
+    t["rec_td"] = _receiver_td(t)
     t["tsg"], t["toop"] = _throw_context(season, t)
     # Route labels: the post-season participation drop, joined play by play. Absent (in
     # season, or a season the file does not carry) the rows simply carry no route.
@@ -3155,7 +3171,7 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
             if pd.isna(ay):
                 continue
             comp = float(r.complete_pass or 0) == 1
-            res = 3 if float(r.interception or 0) == 1 else (2 if comp and float(r.pass_touchdown or 0) == 1 else (1 if comp else 0))
+            res = 3 if float(r.interception or 0) == 1 else (2 if comp and float(r.rec_td or 0) == 1 else (1 if comp else 0))
             yac = pd.to_numeric(r.yards_after_catch, errors="coerce")
             yl = pd.to_numeric(r.yardline_100, errors="coerce")
             q = pd.to_numeric(r.qtr, errors="coerce")
@@ -3178,7 +3194,7 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         return {
             "tgt": int(len(z)), "rec": int(z["complete_pass"].sum()),
             "yds": int(z["receiving_yards"].fillna(0).sum()),
-            "td": int(z["pass_touchdown"].sum()),
+            "td": int(z["rec_td"].sum()),
             # per-catch context: yards after the catch, EPA per target, first downs
             "yac": int(pd.to_numeric(z["yards_after_catch"], errors="coerce").fillna(0).sum()),
             "epa": round(float(pd.to_numeric(z["epa"], errors="coerce").fillna(0).sum()), 2),
@@ -3609,6 +3625,38 @@ def _pfr_to_gsis_map():
     return out
 
 
+def _def_pass_rush_rate(weeks, db_share, exact=None):
+    """Pressures per pass-rush snap, week by week, written onto `weeks` in place.
+
+    PFF and Next Gen judge a rusher by his rate, not his count; PFR's charting gives the
+    count, so the denominator is built here. A pass-rush snap is a dropback he was on the
+    field for: exact when nflverse's participation file carries the season (`exact` maps
+    (week) -> dropbacks on field for this player), estimated otherwise as his defensive
+    snaps × the share of his team's defensive plays that were dropbacks that week
+    (`db_share` maps (team, week) -> share). A week needs 5 such snaps and a charted
+    pressure count to get a rate. Returns (pressures, pass_snaps) summed over the weeks
+    that have both, for the season rate."""
+    sum_prs = sum_ps = 0.0
+    for w in weeks:
+        wk = int(w.get("week") or 0)
+        ps = None
+        if exact and wk in exact and exact[wk] is not None:
+            ps = float(exact[wk])
+        elif w.get("snaps") is not None:
+            share = db_share.get((str(w.get("team") or "").upper(), wk)) if db_share else None
+            if share is not None:
+                ps = float(w["snaps"]) * float(share)
+        if ps is None:
+            continue
+        w["pass_snaps"] = round(ps, 1)
+        prs = w.get("pressures")
+        if prs is not None and ps >= 5:
+            w["prs_rate"] = round(100.0 * float(prs) / ps, 1)
+            sum_prs += float(prs)
+            sum_ps += ps
+    return sum_prs, sum_ps
+
+
 def defensive_weekly_players(season):
     """Per-defender weekly logs (DL/LB/DB groups) for player-card use.
 
@@ -3783,7 +3831,7 @@ def defensive_weekly_players(season):
         "tackles_solo", "tfl", "pd", "ff", "def_td",
     ]
     mean_fields = ["rating_allowed", "adot", "missed_tackle_pct", "snap_pct"]
-    sum_fields = sum_fields + ["snaps"]
+    sum_fields = sum_fields + ["snaps", "pass_snaps"]
 
     # Compact encoding to keep the seed small (this table is the largest nflverse block):
     #   • drop the per-week `team` (identical to the player-level team; the card reader uses
@@ -3853,6 +3901,44 @@ def defensive_weekly_players(season):
     except Exception:
         pass
 
+    # ── Pressure rate: the denominator PFR does not give ────────────────────────
+    # The share of each defense's plays that were dropbacks, week by week (pbp), for the
+    # estimate; the participation file's defense_players for the exact count when the
+    # season has one (it posts after the season — in season this is a 404, and the
+    # estimate stands).
+    db_share = {}
+    try:
+        pb = _load_pbp(season, cols=["game_id", "play_id", "season_type", "week", "defteam", "qb_dropback", "play_type"])
+        pb = pb[(pb["season_type"] == "REG") & pb["play_type"].isin(["pass", "run", "qb_kneel", "qb_spike"])]
+        g = pb.groupby(["defteam", "week"])["qb_dropback"].agg(["size", "sum"])
+        for (tm, wk), r in g.iterrows():
+            if r["size"] > 0:
+                t = str(tm or "").upper()
+                db_share[(NFLVERSE_TO_SEED.get(t, t), int(wk))] = float(r["sum"]) / float(r["size"])
+    except Exception as e:
+        print(f"  (def pressure rate: no dropback share — {type(e).__name__})")
+    exact_ps = {}
+    try:
+        part = _aux_csv(PART_URL.format(season=season), usecols=["nflverse_game_id", "play_id", "defense_players"])
+        dbp = pb[pb["qb_dropback"] == 1][["game_id", "play_id", "week"]].merge(
+            part, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "play_id"], how="inner")
+        dbp = dbp[dbp["defense_players"].notna()]
+        for _, r in dbp.iterrows():
+            wk = int(r["week"])
+            for gid in str(r["defense_players"]).split(";"):
+                gid = gid.strip()
+                if gid:
+                    exact_ps.setdefault(gid, {}).setdefault(wk, 0)
+                    exact_ps[gid][wk] += 1
+    except Exception as e:
+        if not _is_http_not_found(e):
+            print(f"  (def pressure rate: no participation — {type(e).__name__})")
+
+    for key, d in out.items():
+        prs_sum, ps_sum = _def_pass_rush_rate(d["weeks"], db_share, exact_ps.get(d.get("_gsis")))
+        d["_prs_rate"] = round(100.0 * prs_sum / ps_sum, 1) if ps_sum >= 5 else None
+        d["_ps_exact"] = 1 if exact_ps.get(d.get("_gsis")) else None
+
     for key, d in out.items():
         # games = weeks PFR actually charted; gp = weeks he took a snap. They differ a lot for
         # run-stuffing interior linemen, which is the whole point of showing both.
@@ -3863,6 +3949,11 @@ def defensive_weekly_players(season):
         gp = d.pop("_gp", None) or len(d["weeks"])
         d.pop("_gsis", None)
         t = {"games": charted, "gp": gp}
+        prs_rate, ps_exact = d.pop("_prs_rate", None), d.pop("_ps_exact", None)
+        if prs_rate is not None:
+            t["prs_rate"] = prs_rate
+        if ps_exact:
+            t["ps_exact"] = 1
         for f in sum_fields:
             vals = [w.get(f) for w in d["weeks"] if w.get(f) is not None]
             t[f] = (None if not vals else round(float(sum(vals)), 2))

@@ -54,6 +54,12 @@
 .wr-week-top .wr-week-stem{top:18px;height:5px;}
 .wr-week-bottom .wr-week-stem{top:-5px;height:5px;}
 .wr-week-num{font-size:10px;color:var(--text);font-weight:800;}
+/* the league-wide card's week numbers are its picker: the same ring, the same dimming */
+.wr-week-cell.wr-pickable{pointer-events:auto;cursor:pointer;border-radius:8px;padding:1px 4px;}
+.wr-week-cell.wr-pickable:hover{background:rgba(255,255,255,.06);}
+.wr-week-cell.wr-dim{opacity:.45;}
+.wr-week-cell.wr-picked{--pick:var(--accent);box-shadow:0 0 0 2px var(--pick);background:color-mix(in srgb,var(--pick) 18%,transparent);opacity:1;}
+.wr-week-cell.wr-picked .wr-week-num{color:var(--accent);}
 
 /* ── Roster tracker (pinned bottom bar + expandable panel) ── */
 .rt-bar-host{position:fixed;left:0;right:0;bottom:0;z-index:900;pointer-events:none;
@@ -1431,4 +1437,45 @@ button.la-cliff:hover{filter:brightness(1.25);}
   .la-th-team{max-width:none;}
   .la-th-got{width:100%;}
   .la-th-refresh{margin-left:0;}
+}
+
+/* picked games on the week rail: a tap, a W or an L, the rest dimmed */
+.wr-opp-cell.wr-pickable{pointer-events:auto;cursor:pointer;border-radius:8px;padding:1px 3px;}
+.wr-opp-cell.wr-pickable:hover{background:rgba(255,255,255,.06);}
+.wr-opp-cell.wr-dim{opacity:.45;}
+.wr-opp-cell.wr-picked{--pick:var(--muted2);box-shadow:0 0 0 2px var(--pick);background:color-mix(in srgb,var(--pick) 18%,transparent);opacity:1;}
+.wr-res-W{--pick:var(--success)!important;} .wr-res-L{--pick:var(--danger)!important;} .wr-res-T{--pick:var(--muted2)!important;}
+.wr-res{font-size:9px;font-weight:900;color:var(--pick);margin-left:2px;}
+.week-range-picked{font-size:11px;color:var(--muted);margin:2px 0 4px;}
+.week-range-picked b{color:var(--text);}
+/* the phone's chips: the same taps at thumb size */
+.wr-chips{display:none;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.wr-chip{font:inherit;font-size:11px;font-weight:700;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:5px 9px;cursor:pointer;--pick:var(--muted2);}
+.wr-chip b{color:var(--text);margin-right:2px;}
+.wr-chip.wr-picked{box-shadow:0 0 0 2px var(--pick);background:color-mix(in srgb,var(--pick) 18%,transparent);color:var(--text);}
+.wr-chip .wr-res{margin-left:5px;}
+.wr-chip-clear{color:var(--accent);}
+@media (max-width:760px){ .wr-chips{display:flex;} }
+
+/* the result on every played game: a bare letter on the logo's corner — green W, red L */
+.wr-opp-ico{position:relative;display:inline-flex;align-items:center;}
+/* the letter rides the logo's outer corner, away from the slider line: top-right on a logo
+   above the line, bottom-right on one below it, tucked a little onto the logo itself */
+.wr-opp-ico .wr-res-badge{position:absolute;top:-6px;right:-5px;font-size:10.5px;font-weight:900;line-height:1;color:var(--pick);margin:0;
+  text-shadow:0 0 2px var(--surface2),0 0 2px var(--surface2),0 1px 2px var(--surface2);}
+.wr-opp-bottom .wr-opp-ico .wr-res-badge{top:auto;bottom:-6px;}
+@media (max-width:760px){
+  .wr-opp-ico .wr-res-badge{font-size:9.5px;top:-5px;right:-4px;}
+  .wr-opp-bottom .wr-opp-ico .wr-res-badge{top:auto;bottom:-5px;}
+}
+.wr-opp-cell.wr-picked{box-shadow:0 0 0 2px var(--pick);}
+.wr-chip .wr-res{color:var(--pick);font-size:11px;padding:0;margin-left:6px;}
+/* the phone's card is the slider and its rail until a tap opens the chips; the games ▾ / hide ▴
+   toggle sits in the card's corner, out of the label row, so it never wraps onto a row of its own */
+.wr-more{display:none;}
+@media (max-width:760px){
+  .week-range-card{padding:9px 12px 10px;cursor:pointer;position:relative;}
+  .week-range-card .week-range-label{padding-right:58px;}
+  .week-range-card .wr-more{display:block;position:absolute;top:9px;right:12px;font-size:10.5px;font-weight:700;color:var(--accent);white-space:nowrap;}
+  .week-range-card .week-range-help,.week-range-card:not(.wr-open) .wr-chips{display:none;}
 }

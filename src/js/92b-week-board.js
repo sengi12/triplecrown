@@ -17,7 +17,7 @@ function tcWeekLabel(week){ const w=Number(week); return TC_PLAYOFF_WEEKS[w] ? T
 // its line throws — every page load used to die inside boot right there.
 const TC_BOARD_URL = (season, week)=>{ const e=tcEspnWeek(week); return `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=${e.type}&week=${e.week}&dates=${season}`; };
 const TC_BOARD_ABBR = { WSH:'WAS' };          // ESPN spells one club differently
-const TC_BOARD_TTL_LIVE = 4*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 5 s (one small request)
+const TC_BOARD_TTL_LIVE = 8*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 5 s (one small request)
 
 function tcBoardWeek(){
   // The tracker's week: the finished week holds through Tuesday and until Wednesday morning
@@ -176,14 +176,15 @@ function tcFreshAt(eid){
 function tcFreshLabel(at){
   if(!at) return 'reading…';
   const s=Math.max(0, Math.round((Date.now()-at)/1000));
-  return s<1 ? 'just now' : `${s}s ago`;
+  return s<5 ? 'just now' : `${Math.round(s/5)*5}s ago`;   // five-second steps: the ticker runs every five
 }
 function tcFreshHTML(eid){
   const at=tcFreshAt(eid);
   tcFreshTick();
   return `<button class="tc-fresh${_tcFresh.busy?' busy':''}" data-eid="${escAttr(String(eid||''))}" onclick="tcRefreshNow(event)" title="When ESPN was last read — tap to read again now">${(typeof TC_ICON==='function')?TC_ICON('refresh'):'↻'}<span class="tc-fresh-t">${tcFreshLabel(at)}</span></button>`;
 }
-// The stamps on screen tick once a second — the text only, nothing else repaints.
+// The stamps on screen tick every five seconds — the text only, nothing else repaints. (Once
+// a second woke the page sixty times a minute for a number nobody reads to the second.)
 function tcFreshTick(){
   if(_tcFresh.timer || typeof window==='undefined' || typeof window.setInterval!=='function' || typeof document==='undefined' || !document.querySelectorAll) return;
   _tcFresh.timer=window.setInterval(()=>{
@@ -194,7 +195,7 @@ function tcFreshTick(){
       const t=el.querySelector('.tc-fresh-t'); if(t) t.textContent=tcFreshLabel(tcFreshAt(el.getAttribute('data-eid')));
       if(el.classList) el.classList.toggle('busy', !!_tcFresh.busy);
     });
-  }, 1000);
+  }, 5000);
 }
 function tcFreshPaint(){
   if(typeof document==='undefined' || !document.querySelectorAll) return;

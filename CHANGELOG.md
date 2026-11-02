@@ -6,6 +6,61 @@ this file is the merge history, newest first, one line per PR. Add a line when a
 
 Open work lives in [TODO.md](TODO.md).
 
+## 2026-10-20
+
+- fix(game-center): on the phone the pinned score strip no longer vanishes when a play is tapped for replay — the repaint rebuilds the pane with the pinned flag, and the scroll watcher always re-applies it (#204)
+- feat(game-center): on the phone a horizontal swipe across the game's head (hero, field, chart, tabs, or the stuck scoreboard strip at any scroll depth) turns to the next or previous game of the week, the neighbouring panel riding in beside it like a tab page and the page keeping its depth; the games either side are fetched ahead; the week rail no longer yanks the page up on each repaint (#203)
+- fix(game-center): on the phone the field pins itself with position:sticky — the hero scrolls away, the stick part (a slim score strip, the field, the chart, the tabs) never changes height, and the content column and body stop being scroll containers so sticky can work — in place of the hand pin that folded under the finger (#202)
+- fix(game-center): a game, week or tab swapped to lands open at the top of its plays as a cut, never a fold; the short-pane auto-fold is gone — scrolling into the plays folds the block, scrolling back up opens it (#201)
+- fix(game-center): a new game, week or tab starts the pinned block open and the balance check measures with the fold's transitions off, so the plays never come up stuck condensed; on the phone the team picker's live line and the Games pill open the Games tab, never the retired slide-up sheet (#200)
+- feat(card): PRS% on the defensive weekly table — PFR's pressures per pass-rush snap, week by week and for the season, the denominator exact from the participation file after a season and estimated from snaps × the team's dropback share in season, coloured on the 2026 league (#199)
+- fix(card): the defensive weekly table names its source — PFR's charting via nflverse — in one short line with an ⓘ that explains what a pressure is here and why PFF's and Next Gen's counts run two to three times higher (#198)
+- feat(game-center): the hero wears the club logos as faded watermarks (a 192px logo tier keeps them crisp here and on the player and defense cards), the win-probability chart glows in the leader's colour with gridlines and each side's chance at the edge, possession is marked by a real football, and the pinned block's fold is a transition rather than a cut (#197)
+
+## 2026-10-19
+
+- feat(game-center): the pinned block over the plays condenses the moment the feed is scrolled — a slim score line, the field, the win-probability line and the tabs stay, the rest folds — on the desktop sidebar and pinned to the top of the phone's page alike, and a tapped play paints at once and always animates (#196)
+- fix(team): with a week range or picked games on, the rank chips rank against the league over the same weeks — a window pool built from Sleeper's week stats for every skill player — instead of against season totals, which read a one-week total as last of all (#195)
+- feat(game-center): a tap on the win probability line also jumps the field to that play — the drive up to it, the play drawn, the Replay tag — and closing the bubble hands the field back (#194)
+- feat(game-center): tap or drag the win probability line and a bubble names the play behind that point — quarter and clock, the score as it stood, the play, the favoured side's chance and the move from the play before (#193)
+- feat(team): one week filter for the whole team view — a picked game survives the walk from Passing to Receiving to Adv Metrics, the Adv Metrics card is the projections card (W/L rail, taps, chips, fold) on the same shared pick, the league-wide Advanced page picks by week number and the Power Score follows; one builder and one class draw every week slider (#192)
+
+## 2026-10-16
+
+- fix(analyzer): the Trending board says what it measures — one short bar with an ⓘ for the method and the held-out names — holds out injured, absent and returning players, anchors its windows to the sidecar's complete weeks with byes skipped, and pools target shares over the window (#191)
+- fix(team): the week rail's W and L ride the logo's outer corner — top-right above the slider line, bottom-right below it — a size smaller and tucked onto the logo, so nothing sits on the line (#190)
+
+## 2026-10-15
+
+- fix(game-center): punts and kickoffs hang higher on the drive chart — the arc's peak clears the field's top edge and stays under the yard numbers; a throw is unchanged (#189)
+- fix(team): the week rail's schedule is fetched fresh each load (force-cache had frozen a pre-score copy on desktop, hiding every W and L), the results are bare green W / red L letters instead of circle badges, and the phone's card folds to the slider until a tap opens the game chips (#188)
+- fix(team): every played game on the week rail wears its W or L — green and red badges on the logos and the phone chips before anything is tapped; a pick still rings its game and dims the rest (#187)
+- feat(card): tap the contract band on a player card and it opens the deal year by year — base, bonuses, cap hit with its share, dead cap, cut savings — with the season in progress lit, void years marked and a POTENTIAL OUT divider before the first year a cut saves cap; the builder follows OverTheCap's player links for the table, cached per deal (#185)
+- fix(sidebar): the Leaders | Game Center toggle and the hide chevron sit in the top row of the Leaders pane too, so they stay put when switching panes; the week select shares that row when the panel is wide enough and otherwise drops to the scoring line (#186)
+- fix(team): a picked game's result is a solid badge on the logo's corner — white W on green, L on red — instead of a small coloured letter beside it (#184)
+- feat(team): tap a game on a team page's week rail to filter to it — the game wears its W or L from the schedule's scores, the rest dim, tap more to add them, click off the card to clear; phones get a row of chips under the slider at thumb size (#183)
+- feat(sidebar): the right sidebar's controls say what they do — a Leaders | Game Center pair with the open panel lit and a chevron that hides the sidebar, the rail's chevron reopening whichever was up last — in place of the − and + that stepped through three states (#182)
+
+## 2026-10-14
+
+- feat(analyzer): the swing replay shows the highlights — a callout per swing with the player's headshot and the play in his club's colour, the clock holding on each — and the hero's scores, projections and win bar move with the sweep; the scrubber carries a dot per swing, a tap on a dot or a pinned mark opens its highlight (#181)
+- fix(ol): one scorer for every offensive-line surface — the QB card's Offensive Line tab, the rushing fan's run-blocking banner and the team page's O-Line card all read the weekly recompute over the weeks a season has (the QB card showed the preseason projection all year, the fan the builder's season table; the Bengals read 63.9/#21, 55/#13 and 51.0 at once); the projection stays on the QB card as a labeled comparison, and the letters say whether they are pass- or run-block grades (#180)
+
+## 2026-10-13
+
+- feat(team): the Power Score badge on a team page carries "all teams ›" — one tap to the league's Power Score through the season with that team's line lit, instead of Team → Adv Metrics → League → SOS → Power Score (#179)
+- fix(analyzer): Tuesday is recap day — the Matchup tab holds the week just played until Wednesday morning (the Game Center's tracker week), with the coming week in the picker as "next"; and a week's swing chart reads that week's own board, so week 6 no longer replays week 5's plays (#178)
+- feat(analyzer): the swing chart replays the week — a Replay button sweeps the line from the first kickoff with the swings appearing as it passes them and a readout of the chance, points and projections, a scrubber steps to any play — and on a desktop the drawing is 960 wide with the recap beside it instead of a phone card stretched across the page; the block no longer waits on the 45-second poll to notice the week's board has landed (#177)
+
+## 2026-10-12
+
+- fix(game-center): kicks to the Rams land at the Rams' end — ESPN's play text calls them "LA" while its board says "LAR", so a kickoff to LA 4 read as the other club's 4 and drew at the wrong end of the field (#176)
+- feat(game-center): a player's points in the fantasy pane are a tap — Sleeper's score-breakdown sheet, each stat the scoring pays for, what it pays, what it paid, priced the same way the card's number was — and every fumble counts: the model gains `fumbles` (Sleeper's fum, ESPN's 68) beside the lost one, and the Live feed reads a fumble play as the run or catch it was, then the fumble, then the loss (#175)
+- fix(game-center): a punt's snap is where the play's words put it — ESPN stamps some punts' yardsToEndzone from the receiving side, which dragged the drive line across the field and arced the kick from the wrong end — and a punt or kickoff now hangs high, its arc rising with the distance (#174)
+- perf(live): a game on the phone repaints what moved, not the page — the live views are patched in place (one text node for a score, one row for a play), the live loop ticks every 10 s and stops in the background, the season refresh skips rebuilds between plays, pulses animate opacity only and the tab bar drops its backdrop blur; measured 90 s live: style recalcs 5,773 → 134, layouts 413 → 39, busy time 11.8 s → 1.2 s (#173)
+- feat(analyzer): the matchup card shows how the win chance moved, play by play — one line from the first kickoff to the final whistle, replayed from ESPN's play log under the league's own scoring, the biggest swings pinned by the player who made them, finals snapping to Sleeper's totals so the line ends on the scoreboard (#172)
+- fix(scoring): two-point conversions count in fantasy points everywhere (one setting, a 2-PT CONV field, Sleeper's three keys and ESPN's ids map to it; the weekly sidecar gains pass/rush/rec 2-pt columns and stops counting a try as a target or carry) — and a completion lateralled on for the score is the lateral man's touchdown, not the targeted receiver's, in the route tab, the target map and the weekly lines (Evans → Samuel, 2026 wk 3) (#171)
+
 ## 2026-10-11
 
 - fix(seed): a KeepTradeCut scrape that parses two players out of four hundred is a page that moved, not a fetch that worked — it used to print "ok (2 players)" and cache them; it now fails loudly, caches nothing, and names the field names the rows carry so the repair is a rename (#170)

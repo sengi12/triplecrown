@@ -7,7 +7,8 @@ global.confirm=()=>true;global.btoa=s=>Buffer.from(s,'binary').toString('base64'
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
-  renderTeamAdvanced, renderSharpLeague, setSharpCategory, setSharpTable, showSharpLeague,
+  renderTeamAdvanced, renderSharpLeague, setSharpCategory, setSharpTable, showSharpLeague, sosOpenPower,
+  getSos:()=>({focus:_sosPowerFocus, tab:_sosChartTab, phase:currentPhase, table:sharpTable}),
   sortSOSBy, fmtSharpVal, sharpColIsPct, teamDisplayName, ordinal, tabBar,
   setNflverse:(n)=>{NFLVERSE=n;}, setSharpSeason:(y)=>{SHARP_SEASON=y;},
   setSOS:(s)=>{SOS=s;}, setNames:(n)=>{TEAM_NAMES=n;},
@@ -94,4 +95,9 @@ app.sortSOSBy('win_total');
 html=app.getContent();
 chk(html.includes('win_total')||html.includes('VEGAS WIN TOTAL'),'still shows table after sort');
 
+
+console.log('=== the badge on a team page opens the league chart on that team ===');
+app.sosOpenPower('cin');
+const so=app.getSos();
+chk(so.phase==='AdvancedLeague' && so.table==='__sos__' && so.tab==='power' && so.focus==='CIN', `one tap: Adv Metrics → League → SOS → Power Score, CIN lit (${JSON.stringify(so)})`);
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

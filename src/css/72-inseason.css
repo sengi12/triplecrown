@@ -162,6 +162,12 @@
 .la-trnd-card{padding:10px 14px;margin-bottom:12px;}
 .la-trnd-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
 .la-trnd-h{font-size:10.5px;font-weight:800;letter-spacing:.5px;margin-bottom:6px;}
+/* a board's title reads as a title — what the numbers are and over which weeks */
+.la-trnd-lbl{color:var(--text);font-size:12px;}
+.la-trnd-barhd .la-ins-sub{max-width:62ch;line-height:1.35;}
+.la-trnd-barhd .tc-info-btn{vertical-align:middle;margin-left:2px;}
+.tc-info-list{font-size:12px;line-height:1.5;color:var(--text);margin:0 0 6px;}
+.tc-info-sub{margin:8px 0 2px;}
 .la-trnd-up{color:var(--success);}
 .la-trnd-dn{color:var(--danger);}
 .la-trnd-row{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;min-width:0;border-bottom:1px solid var(--border);}
@@ -429,3 +435,76 @@
 .la-snp-tier{font-weight:700;color:var(--text);}
 .la-snp-tier b{color:var(--accent);}
 .la-snp-src{font-size:9.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:0 4px;cursor:help;}
+
+/* ── Matchup swing chart: one line, my chance to win across the week ── */
+.la-swing{margin-top:10px;border-top:1px solid var(--border);padding-top:8px;}
+.la-swing-head{display:flex;align-items:baseline;gap:8px;min-width:0;}
+.la-swing-head .la-ins-sub{flex:1;}
+.la-swing-x{margin-left:auto;background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:0 4px;line-height:1;}
+.la-swing-state{font-size:12px;color:var(--muted);margin:2px 0 4px;}
+.la-swing-state b{color:var(--text);font-size:14px;}
+.la-swing-who{font-weight:800;color:var(--text);}
+.la-swing-won{color:var(--success)!important;} .la-swing-lost{color:var(--danger)!important;}
+.la-swing-svg{width:100%;height:auto;display:block;font-family:inherit;}
+.la-swing-grid{stroke:var(--border);stroke-width:1;}
+.la-swing-mid{stroke:var(--muted2);stroke-dasharray:3 3;}
+.la-swing-ylab{fill:var(--muted);font-size:10px;text-anchor:end;}
+.la-swing-tick{fill:var(--muted);font-size:10px;text-anchor:middle;}
+.la-swing-tick-end{font-weight:800;fill:var(--text);}
+.la-swing-area{stroke:none;opacity:.16;}
+.la-swing-area-up{fill:var(--success);} .la-swing-area-dn{fill:var(--danger);}
+.la-swing-line{fill:none;stroke:var(--accent);stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round;}
+.la-swing-stem{stroke:var(--muted2);stroke-width:1;stroke-dasharray:2 2;}
+.la-swing-dot{fill:var(--surface);stroke:var(--accent);stroke-width:2;}
+.la-swing-ring{fill:var(--surface);stroke:var(--muted2);stroke-width:2;}
+.la-swing-mine .la-swing-ring{stroke:var(--success);} .la-swing-opp .la-swing-ring{stroke:var(--danger);}
+.la-swing-sign{font-size:10.5px;font-weight:800;fill:var(--text);}
+.la-swing-mark{cursor:pointer;}
+.la-swing-now{fill:var(--accent);stroke:var(--surface);stroke-width:2;}
+.la-swing-final{fill:var(--text);}
+.la-swing-recap{display:flex;flex-direction:column;margin-top:6px;}
+.la-swing-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--border);}
+.la-swing-hsimg{width:30px;height:30px;border-radius:50%;object-fit:cover;background:var(--surface2);border:2px solid var(--muted2);}
+.la-swing-mine .la-swing-hsimg{border-color:var(--success);} .la-swing-opp .la-swing-hsimg{border-color:var(--danger);}
+.la-swing-rtext{display:flex;flex-direction:column;min-width:0;flex:1;font-size:12.5px;}
+.la-swing-rtext b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.la-swing-rsub{font-size:11px;color:var(--muted);}
+.la-swing-dp{font-weight:900;font-size:13px;} .la-swing-up .la-swing-dp{color:var(--success);} .la-swing-dn .la-swing-dp{color:var(--danger);}
+.la-swing-none,.la-swing-wait{font-size:12px;color:var(--muted);padding:6px 0;}
+.la-swing-closed{margin-top:8px;}
+
+/* the chart beside its recap on a wide screen; the replay controls */
+.la-swing-body{display:flex;flex-direction:column;gap:6px;}
+.la-swing-chart{min-width:0;}
+.la-swing-state{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;}
+.la-swing-live b{color:var(--text);font-size:14px;}
+.la-swing-ctl{display:flex;align-items:center;gap:10px;margin-top:4px;}
+.la-swing-play{flex:none;}
+.la-swing-scrub{flex:1;min-width:120px;accent-color:var(--accent);}
+.la-swing-mark{transition:opacity .25s;}
+.la-swing-cursor{fill:var(--text);}
+@media (prefers-reduced-motion:reduce){ .la-swing-mark{transition:none;} }
+@media (min-width:900px){
+  .la-swing-body{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:6px 18px;align-items:start;}
+  .la-swing-recap{margin-top:0;max-height:300px;overflow-y:auto;}
+  .la-swing-svg{max-width:100%;}
+}
+
+/* the replay's highlights and the dots on the scrubber */
+.la-swing-stage{position:relative;}
+.la-swing-callout{position:absolute;z-index:3;display:flex;align-items:center;gap:8px;padding:5px 12px 5px 6px;border-radius:999px;color:#fff;
+  box-shadow:0 6px 18px rgba(0,0,0,.45);transform:translate(-50%,calc(-100% - 26px));cursor:pointer;white-space:nowrap;max-width:min(92%,320px);}
+.la-swing-callout.la-swing-co-below{transform:translate(-50%,26px);}
+.la-swing-callout::after{content:"";position:absolute;left:50%;bottom:-5px;width:11px;height:11px;background:inherit;transform:translateX(-50%) rotate(45deg);border-radius:2px;}
+.la-swing-callout.la-swing-co-below::after{bottom:auto;top:-5px;}
+.la-swing-co-hs{width:34px;height:34px;border-radius:50%;object-fit:cover;background:rgba(255,255,255,.2);border:2px solid rgba(255,255,255,.75);flex:none;}
+.la-swing-co-txt{display:flex;flex-direction:column;line-height:1.15;font-size:12.5px;min-width:0;}
+.la-swing-co-txt b{font-size:13px;}
+.la-swing-co-pos{font-weight:600;opacity:.85;font-size:11px;}
+.la-swing-co-txt span{overflow:hidden;text-overflow:ellipsis;}
+.la-swing-scrubwrap{position:relative;flex:1;min-width:120px;display:flex;align-items:center;}
+.la-swing-scrubwrap .la-swing-scrub{width:100%;}
+.la-swing-dots{position:absolute;left:8px;right:8px;top:50%;height:0;pointer-events:none;}
+.la-swing-sdot{position:absolute;top:0;width:11px;height:11px;border-radius:50%;transform:translate(-50%,-50%);background:var(--surface);border:2px solid var(--muted2);pointer-events:auto;cursor:pointer;}
+.la-swing-sdot.la-swing-mine{border-color:var(--success);} .la-swing-sdot.la-swing-opp{border-color:var(--danger);}
+@media (prefers-reduced-motion:reduce){ .la-swing-callout{transition:none;} }

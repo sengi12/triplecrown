@@ -10,7 +10,12 @@ global.window={};global.Chart=function(){return{destroy(){}}};global.toast=()=>{
 const code=require('fs').readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   chip: leagueRankChip, shareChip: leagueShareRankChip, teamChip: leagueTeamRankChip,
-  setBPL:(fn)=>{ buildPlayerList=fn; }, setCacheList:(l)=>{ if(typeof _buildPlayerCache!=='undefined' && _buildPlayerCache) _buildPlayerCache.list=l; }
+  setBPL:(fn)=>{ buildPlayerList=fn; }, setCacheList:(l)=>{ if(typeof _buildPlayerCache!=='undefined' && _buildPlayerCache) _buildPlayerCache.list=l; },
+  window:_lgWindow, ensure:ensureLeagueWindowPool, pool:_lgPool,
+  setView:(team,season)=>{ currentTeam=team; activeSeason=season; TC_SEASON.year=Number(season); TC_SEASON.phase='regular'; TC_SEASON.week=7; },
+  setRange:(team,season,lo,hi)=>setSharedWeekRange(team,season,lo,hi), pick:(team,wk,season)=>{ setSharedWeekPicks(team,season,[wk]); setSharedWeekRange(team,season,wk,wk); },
+  clearWin:(team,season)=>{ setSharedWeekRange(team,season,1,18); setSharedWeekPicks(team,season,null); },
+  stubWeeks:(byWeek)=>{ sleeperFetch=async()=>{ throw new Error('no net'); }; fetchWeekStats=async(season,wk,pos)=>((byWeek[wk]||[]).filter(r=>r.position===pos)); }
 };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const ord=s=>(String(s).match(/>(\d+\w+)</)||[])[1]||null;
@@ -48,5 +53,31 @@ pool=[{pos:'QB',team:'A',interceptions_thrown:1},{pos:'QB',team:'B',interception
 chk(ord(app.chip('QB','interceptions_thrown',1,'lo'))==='1st','1 INT → 1st (fewer is better)');
 chk(ord(app.chip('QB','interceptions_thrown',9,'lo'))==='3rd','9 INT → 3rd');
 
+(async()=>{
+console.log('=== a week filter ranks against the league over the SAME weeks ===');
+// the season pool says a 14-carry back is last; the window pool (weeks 2–3) says he is 2nd of 3
+pool=[{pos:'RB',team:'NYG',rushing_attempts:81},{pos:'RB',team:'A',rushing_attempts:140},{pos:'RB',team:'B',rushing_attempts:120},{pos:'RB',team:'C',rushing_attempts:100}]; ver=6;
+const R=(id,team,pos,att,yd)=>({player_id:id, team, position:pos, player:{first_name:'P',last_name:id}, stats:{rush_att:att, rush_yd:yd, gp:1}});
+app.stubWeeks({ 2:[R('g','NYG','RB',8,30), R('a','A','RB',20,90), R('b','B','RB',6,20), R('q','A','QB',3,10)],
+                3:[R('g','NYG','RB',6,24), R('a','A','RB',18,70), R('b','B','RB',5,15)] });
+app.setView('NYG','2026');
+chk(app.window()===null, 'no filter: no window, the season pool as before');
+chk(ord(app.chip('RB','rushing_attempts',14,'hi'))==='5th', 'against the season pool, 14 carries reads last (5th of 4 backs) — the bug');
+app.setRange('NYG','2026',2,3);
+const w=app.window();
+chk(w && w.season==='2026' && w.weeks.join()==='2,3' && w.key==='2026:2,3', 'weeks 2–3 on the team in view is the window');
+chk(app.pool().length===0 && app.chip('RB','rushing_attempts',14,'hi')==='', 'before the window pool lands the chips are blank, never ranked against the season');
+const wp=await app.ensure('2026',[2,3]);
+chk(Array.isArray(wp) && wp.length===4 && wp.find(x=>x.player_id==='g').rushing_attempts===14 && wp.find(x=>x.player_id==='a').rushing_attempts===38 && wp.find(x=>x.player_id==='q').pos==='QB', 'the window pool sums every skill player’s Sleeper week rows over weeks 2 and 3 (NYG back 8+6=14, A 20+18=38, the QB kept)');
+chk(ord(app.chip('RB','rushing_attempts',14,'hi'))==='2nd', 'now 14 carries ranks 2nd of the 3 backs over those weeks');
+chk(ord(app.teamChip(['RB'],'rushing_attempts',14,'hi'))==='2nd', 'the team total ranks against the other teams’ RB carries over the same weeks (38, 14, 11)');
+chk(ord(app.shareChip('RB','rushing_attempts',1.0,'RBs',['RB']))==='1st', 'a share ranks within the window pool too');
+app.pick('NYG',3,'2026');
+chk(app.window().key==='2026:3' && app.chip('RB','rushing_attempts',6,'hi')==='', 'a pick is a different window: its own key, blank until its pool lands');
+await app.ensure('2026',[3]);
+chk(ord(app.chip('RB','rushing_attempts',6,'hi'))==='1st' || ord(app.chip('RB','rushing_attempts',6,'hi'))==='2nd', `week 3 alone ranks 6 carries among 18, 6, 5 (${ord(app.chip('RB','rushing_attempts',6,'hi'))})`);
+app.clearWin('NYG','2026');
+chk(app.window()===null && ord(app.chip('RB','rushing_attempts',81,'hi'))==='4th', 'the filter cleared: back to the season pool (81 of 140/120/100/81 → 4th)');
 console.log('\nRESULT:', pass+'/'+total, pass===total?'ALL PASS':'SOME FAILED');
 process.exit(pass===total?0:1);
+})();

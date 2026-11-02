@@ -16,11 +16,22 @@ const GC_POS = ['ALL','QB','RB','WR','TE','K','DEF','IDP','RK'];   // the Rankin
 const GC_GROUPS = [['QB','Quarterback',['QB']],['RB','Running back',['RB','FB']],['WR','Wide receiver',['WR']],['TE','Tight end',['TE']],['K','Kicker',['K']],['DEF','Defense / ST',['DEF']],['IDP','Defenders',['DL','DE','DT','NT','LB','OLB','ILB','MLB','DB','CB','S','SS','FS']]];
 
 function gcLoadMode(){ try{ const m=localStorage.getItem('tc_rsb'); if(GC_MODES.includes(m)) _gc.mode=m; }catch(e){} }
-function gcSetMode(m){ if(!GC_MODES.includes(m)) return; _gc.mode=m; try{ localStorage.setItem('tc_rsb', m); }catch(e){} renderRightSidebar(); }
-function gcSetWeek(v){ _gc.week = v==='current' ? 'current' : Number(v); _gc.game=null; renderRightSidebar(); }
+function gcSetMode(m){
+  if(!GC_MODES.includes(m)) return;
+  _gc.mode=m;
+  // the panel the rail reopens to: whichever of the two was up last
+  if(m!=='min'){ _gc.lastOpen=m; try{ localStorage.setItem('tc_rsb_open', m); }catch(e){} }
+  try{ localStorage.setItem('tc_rsb', m); }catch(e){}
+  renderRightSidebar();
+}
+function gcOpenLast(){
+  let m=_gc.lastOpen; if(!m){ try{ m=localStorage.getItem('tc_rsb_open'); }catch(e){} }
+  gcSetMode(m==='max' ? 'max' : 'normal');
+}
+function gcSetWeek(v){ _gc.week = v==='current' ? 'current' : Number(v); _gc.game=null; gcFeedReset(); renderRightSidebar(); }
 // Picking a game from the phone's half-open sheet also pulls the sheet up: the game list is
 // the half state's point, the picked game's lines are the full state's.
-function gcPick(id){ _gc.game=id; if(!gcInGamesView() && typeof _gcm!=='undefined' && _gcm.open==='half') _gcm.open='full'; renderRightSidebar(); }
+function gcPick(id){ _gc.game=id; gcFeedReset(); if(!gcInGamesView() && typeof _gcm!=='undefined' && _gcm.open==='half') _gcm.open='full'; renderRightSidebar(); }
 // "Now" is the tracker's week: the finished week holds through Tuesday and until Wednesday
 // 06:00 Eastern (tcTrackerWeek), so Tuesday's look still opens on everything that happened.
 function gcCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
@@ -59,6 +70,86 @@ function gcPoints(row){
   if(['QB','RB','WR','TE'].includes(pos) && typeof ldPoints==='function') return ldPoints({pos, stats:st});
   return st.pts_half_ppr!=null ? +st.pts_half_ppr : (st.pts_std!=null ? +st.pts_std : null);
 }
+// ── Where the points came from ───────────────────────────────────────────────
+// Sleeper's score-breakdown sheet: each stat the scoring pays for, what it pays, what it
+// paid. Built the SAME way the number was — the league's own table (tcSleeperPoints: every
+// stat key the table prices) or the app's model (calcFpts, row by row) — so the rows always
+// sum to the figure on the card.
+const TC_STAT_LABELS = {
+  pass_yd:'Passing yards', pass_td:'Passing TD', pass_int:'Interception', pass_att:'Pass attempt', pass_cmp:'Completion', pass_2pt:'2-pt pass', pass_sack:'Sacked',
+  pass_fd:'Passing first down', pass_inc:'Incompletion', pass_cmp_40p:'40+ yd completion', pass_td_40p:'40+ yd passing TD', pass_td_50p:'50+ yd passing TD',
+  rush_yd:'Rushing yards', rush_td:'Rushing TD', rush_att:'Carry', rush_2pt:'2-pt run', rush_fd:'Rushing first down', rush_40p:'40+ yd run', rush_td_40p:'40+ yd rushing TD', rush_td_50p:'50+ yd rushing TD',
+  rec:'Reception', rec_yd:'Receiving yards', rec_td:'Receiving TD', rec_tgt:'Target', rec_2pt:'2-pt catch', rec_fd:'Receiving first down', rec_40p:'40+ yd catch', rec_td_40p:'40+ yd receiving TD', rec_td_50p:'50+ yd receiving TD',
+  bonus_rec_te:'TE reception bonus', bonus_rec_rb:'RB reception bonus', bonus_rec_wr:'WR reception bonus',
+  bonus_pass_yd_300:'300-yd passing game', bonus_pass_yd_400:'400-yd passing game', bonus_rush_yd_100:'100-yd rushing game', bonus_rush_yd_200:'200-yd rushing game', bonus_rec_yd_100:'100-yd receiving game', bonus_rec_yd_200:'200-yd receiving game',
+  fum:'Fumble', fum_lost:'Fumble lost', fum_rec_td:'Fumble recovery TD', kr_yd:'Kick return yards', pr_yd:'Punt return yards', kr_td:'Kick return TD', pr_td:'Punt return TD', st_td:'Special teams TD', st_fum_rec:'Special teams fumble recovery', st_ff:'Special teams forced fumble',
+  xpm:'Extra point', xpmiss:'Missed extra point', fgm:'Field goal', fgmiss:'Missed field goal', fgm_0_19:'FG 0–19', fgm_20_29:'FG 20–29', fgm_30_39:'FG 30–39', fgm_40_49:'FG 40–49', fgm_50p:'FG 50+', fgm_50_59:'FG 50–59', fgm_60p:'FG 60+', fgm_yds:'FG yards', fgmiss_0_19:'Missed FG 0–19', fgmiss_20_29:'Missed FG 20–29', fgmiss_30_39:'Missed FG 30–39', fgmiss_40_49:'Missed FG 40–49', fgmiss_50p:'Missed FG 50+',
+  sack:'Sack', int:'Interception', ff:'Forced fumble', fum_rec:'Fumble recovery', safe:'Safety', blk_kick:'Blocked kick', def_td:'Defensive TD', def_st_td:'Defense / ST TD', def_st_ff:'Defense / ST forced fumble', def_st_fum_rec:'Defense / ST fumble recovery', def_kr_yd:'Kick return yards', def_pr_yd:'Punt return yards', def_2pt:'Defensive 2-pt', def_4_and_stop:'4th-down stop', def_3_and_out:'Three and out',
+  pts_allow_0:'0 points allowed', pts_allow_1_6:'1–6 points allowed', pts_allow_7_13:'7–13 points allowed', pts_allow_14_20:'14–20 points allowed', pts_allow_21_27:'21–27 points allowed', pts_allow_28_34:'28–34 points allowed', pts_allow_35p:'35+ points allowed', pts_allow:'Points allowed',
+  yds_allow_0_100:'0–100 yards allowed', yds_allow_100_199:'100–199 yards allowed', yds_allow_200_299:'200–299 yards allowed', yds_allow_300_349:'300–349 yards allowed', yds_allow_350_399:'350–399 yards allowed', yds_allow_400_449:'400–449 yards allowed', yds_allow_450_499:'450–499 yards allowed', yds_allow_500_549:'500–549 yards allowed', yds_allow_550p:'550+ yards allowed', yds_allow:'Yards allowed',
+  idp_tkl:'Tackle', idp_tkl_solo:'Solo tackle', idp_tkl_ast:'Assisted tackle', idp_tkl_loss:'Tackle for loss', idp_sack:'Sack', idp_int:'Interception', idp_ff:'Forced fumble', idp_fum_rec:'Fumble recovery', idp_pass_def:'Pass defended', idp_qb_hit:'QB hit', idp_def_td:'Defensive TD', idp_safe:'Safety', idp_blk_kick:'Blocked kick',
+};
+function tcStatLabel(k){
+  if(TC_STAT_LABELS[k]) return TC_STAT_LABELS[k];
+  return String(k||'').replace(/_/g,' ').replace(/^./, c=>c.toUpperCase());
+}
+// → {rows:[{key,label,stat,per,pts}], total, source}; rows in the order they matter (biggest first).
+function tcPointsBreakdown(stats, pos, scRaw, srcName){
+  stats=stats||{}; pos=String(pos||'').toUpperCase();
+  const r2=(v)=>Math.round(v*100)/100;
+  const rows=[];
+  if(scRaw){
+    for(const k in scRaw){
+      const v=stats[k], per=scRaw[k];
+      if(typeof v!=='number' || typeof per!=='number' || !v) continue;
+      rows.push({key:k, label:tcStatLabel(k), stat:v, per, pts:v*per});
+    }
+    rows.sort((a,b)=>Math.abs(b.pts)-Math.abs(a.pts));
+    return {rows, total:r2(rows.reduce((a,r)=>a+r.pts,0)), source:srcName||'league scoring'};
+  }
+  const sc=(typeof scoringSettings!=='undefined' && scoringSettings) ? scoringSettings : {};
+  const s=stats;
+  if(['QB','RB','WR','TE'].includes(pos)){
+    const yd=(key, label, ydg, mult)=>{ const v=s[key]||0; if(!v || !(ydg>0)) return; const per=(mult!=null?mult:1)/ydg; rows.push({key, label, stat:v, per, pts:v*per}); };
+    const ct=(key, label, per)=>{ const v=s[key]||0; if(!v || !per) return; rows.push({key, label, stat:v, per, pts:v*per}); };
+    yd('pass_yd','Passing yards', sc.passing_yards_yardage, sc.passing_yards_points);
+    ct('pass_td','Passing TD', sc.passing_touchdowns); ct('pass_int','Interception', sc.interceptions_thrown);
+    ct('pass_att','Pass attempt', sc.passing_attempts); ct('pass_cmp','Completion', sc.passing_completions);
+    yd('rec_yd','Receiving yards', sc.receiving_yards_yardage, sc.receiving_yards_points);
+    ct('rec_td','Receiving TD', sc.receiving_touchdowns);
+    ct('rec','Reception', (sc.receptions||0) + (pos==='TE' ? (sc.receptions_te_bonus||0) : 0));
+    yd('rush_yd','Rushing yards', sc.rushing_yards_yardage, sc.rushing_yards_points);
+    ct('rush_td','Rushing TD', sc.rushing_touchdowns); ct('rush_att','Carry', sc.rushing_attempts);
+    ct('fum_lost','Fumble lost', sc.fumbles_lost); ct('fum','Fumble', sc.fumbles);
+    const tp=(s.pass_2pt||0)+(s.rush_2pt||0)+(s.rec_2pt||0);
+    if(tp && sc.two_point_conversions) rows.push({key:'2pt', label:'2-pt conversion', stat:tp, per:sc.two_point_conversions, pts:tp*sc.two_point_conversions});
+    rows.sort((a,b)=>Math.abs(b.pts)-Math.abs(a.pts));
+    return {rows, total:r2(rows.reduce((a,r)=>a+r.pts,0)), source:srcName||'app scoring'};
+  }
+  // kickers and defenses under the app's scoring: Sleeper's own total, one line
+  const rec=Number(sc.receptions||0); const k = rec>=1 ? 'pts_ppr' : rec>0 ? 'pts_half_ppr' : 'pts_std';
+  const v = s[k]!=null ? +s[k] : (s.pts_half_ppr!=null ? +s.pts_half_ppr : null);
+  if(v!=null) rows.push({key:k, label:`Sleeper ${k==='pts_ppr'?'PPR':k==='pts_std'?'standard':'half-PPR'} points`, stat:1, per:v, pts:v});
+  return {rows, total:r2(rows.reduce((a,r)=>a+r.pts,0)), source:srcName||'Sleeper'};
+}
+function tcBreakdownHTML(b){
+  const f=(v)=>(Math.round(v*100)/100).toFixed(2);
+  const per=(v)=>{ const a=Math.abs(v); return a<0.1 ? v.toFixed(3) : f(v); };
+  if(!b.rows.length) return `<div class="tc-brk-none">Nothing the scoring pays for yet.</div>`;
+  return `<table class="tc-brk"><thead><tr><th>Stat</th><th class="n">#</th><th class="n">Pts per</th><th class="n">Points</th></tr></thead><tbody>${
+    b.rows.map(r=>`<tr class="${r.pts<0?'neg':''}"><td>${escHtml(r.label)}</td><td class="n">${Number.isInteger(r.stat)?r.stat:r.stat}</td><td class="n">${per(r.per)}</td><td class="n"><b>${f(r.pts)}</b></td></tr>`).join('')
+  }</tbody><tfoot><tr><td>Total</td><td></td><td></td><td class="n"><b>${f(b.total)}</b></td></tr></tfoot></table>
+  <div class="tc-brk-src">${escHtml(b.source)}</div>`;
+}
+// The pane's rows, by player, for the tap on a number.
+var _gcBrk = {};
+function gcPtsPop(ev, pid){
+  const r=_gcBrk[String(pid)]; if(!r) return;
+  const sc=gcScoring(); const lgE=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
+  const src = sc ? ((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'TripleCrown scoring';
+  const b=tcPointsBreakdown(r.stats||{}, gcPos(r), sc, src);
+  tcPopShow(ev, 'brk:'+pid, `${escHtml(gcName(r))} · ${b.total.toFixed(2)}`, tcBreakdownHTML(b));
+}
 // Who rosters him in the synced league.
 function gcOwnerOf(pid){
   const L=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
@@ -70,7 +161,9 @@ function gcOwnerOf(pid){
 }
 // The board for any week (the current week reuses the live board).
 function gcBoard(wk){
-  const cur=Math.max(1, Number(TC_SEASON.week||1));
+  // the live board is the TRACKER's week (the finished week holds through Tuesday); another
+  // week — the coming one, asked for on a Tuesday — reads its own board, never that one
+  const cur=(typeof tcBoardWeek==='function') ? tcBoardWeek() : Math.max(1, Number(TC_SEASON.week||1));
   if(wk===cur && typeof tcWeekBoard==='function'){ const b=tcWeekBoard(); if(b && Object.keys(b).length) return b; }
   const key=`${TC_SEASON.year}|${wk}`;
   if(_gc.boards[key]) return _gc.boards[key];
@@ -255,9 +348,12 @@ function gcPlayerHTML(x, side){
   const pid=String(r.player_id||''); const pos=gcPos(r);
   // a D/ST row opens the team defense's card (its id is the team code)
   const click = pos==='DEF' ? ` onclick="${pcardOnclick(String(r.team||pid).toUpperCase(), 'DEF', String(r.team||pid).toUpperCase())}"` : ` onclick="${pcardOnclick(pid, pos, r.team||'')}"`;
+  // the number is a tap: where the points came from (Sleeper's score breakdown)
+  _gcBrk[pid]=r;
+  const tap = (x.pts!=null && !r.proj) ? ` onclick="gcPtsPop(event,'${escAttr(pid)}')" title="How the points add up"` : '';
   return `<div class="gc-p gc-p-${side}${r.proj?' gc-p-proj':''}"${click}>
     <div class="gc-pinfo">${owner?`<span class="gc-owner">${escHtml(owner)}</span>`:''}<span class="gc-pname${gcSideClass(pid)}">${escHtml(gcName(r))}</span>${x.line?`<span class="gc-line">${escHtml(x.line)}</span>`:''}</div>
-    <span class="gc-ptsbox"><b class="gc-pts">${x.pts!=null?x.pts.toFixed(2):'–'}</b>${x.proj!=null?`<small class="gc-proj" title="projected">${x.proj.toFixed(2)}</small>`:''}</span>
+    <span class="gc-ptsbox${tap?' gc-ptsbox-tap':''}"${tap}><b class="gc-pts">${x.pts!=null?x.pts.toFixed(2):'–'}</b>${x.proj!=null?`<small class="gc-proj" title="projected">${x.proj.toFixed(2)}</small>`:''}</span>
   </div>`;
 }
 // A game not yet played shows each side's players with the week's PROJECTED line — Sleeper's
@@ -317,7 +413,7 @@ function gcGameHTML(game, rows, wk){
   const src = game.state==='pre' ? '' : `<div class="gc-src">ESPN</div>`;
   const won = game.state==='post' && game.as!=null && game.hs!=null && game.as!==game.hs ? (game.as>game.hs?'away':'home') : '';
   const hero=`<div class="gc-herowrap"><div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
-      <span class="gc-hero-wm gc-hero-wm-a" aria-hidden="true">${game.away}</span><span class="gc-hero-wm gc-hero-wm-h" aria-hidden="true">${game.home}</span>
+      <img src="${(typeof NFL_LOGO_HI==='function'?NFL_LOGO_HI:NFL_LOGO)(game.away)}" class="gc-hero-wm gc-hero-wm-a" alt="" aria-hidden="true" onerror="this.style.display='none'"><img src="${(typeof NFL_LOGO_HI==='function'?NFL_LOGO_HI:NFL_LOGO)(game.home)}" class="gc-hero-wm gc-hero-wm-h" alt="" aria-hidden="true" onerror="this.style.display='none'">
       <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.away))}</span><span class="gc-rec">${escHtml(game.arec)}</span>${dots(sit&&sit.to?sit.to.away:null)}</div>
       <b class="gc-score gc-score-a">${game.state==='pre'?'':(game.as!=null?game.as:'–')}${ball(game.away)}</b>
       <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}${won?' gc-won-'+won:''}">${mid}</div>${(spot||game.state==='in')?`<div class="gc-spot">${spot}</div>`:''}${src}</div>
@@ -342,7 +438,19 @@ function gcGameHTML(game, rows, wk){
   // scroll in their own window — so a play tapped for replay keeps animating in view (CSS
   // turns this off inside the phone's bottom sheet, where the whole sheet scrolls).
   const winbar=(typeof gcWinBarHTML==='function') ? gcWinBarHTML(game, sum) : '';
-  if(tab==='feed') return `<div class="gc-feedview"><div class="gc-feedview-head">${hero}${oddsHtml}${top}${tabs}</div><div class="gc-feedview-feed">${gcFeedHTML(game, sum)}${winbar}</div></div>`;
+  if(tab==='feed'){
+    // The head in two parts. On the desktop sidebar the whole head is pinned and condenses
+    // on scroll. On the phone, where the page scrolls, the top part (hero, odds, last play)
+    // scrolls away like any content and the STICK part — a slim score strip, the field, the
+    // drive sentence, the chart, the tabs — is position:sticky, so the browser pins it and
+    // nothing in it ever changes height under the reader's finger. The strip is always in
+    // the layout and simply fades in once the hero has scrolled off (class gc-stuck).
+    const lastPlay=(typeof gcLastPlayHTML==='function') ? gcLastPlayHTML(game, sum) : '';
+    const drive=(typeof gcDriveChartHTML==='function') ? gcDriveChartHTML(game, sum) : '';
+    const wp=(typeof gcWinProbHTML==='function') ? gcWinProbHTML(game, sum) : '';
+    const strip=`<div class="gc-stick-score" aria-hidden="true"><span class="gc-ss-side"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.away))}</span><b class="gc-ss-num">${game.state==='pre'?'':(game.as!=null?game.as:'–')}</b><span class="gc-ss-mid">${mid}</span><b class="gc-ss-num">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}</b><span class="gc-ss-side gc-ss-home">${escHtml(nick(game.home))}<img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'"></span></div>`;
+    return `<div class="gc-feedview${_gcd.condensed?' gc-condensed':''}${_gcd.stuck?' gc-stuck':''}${_gcd.feedFresh?' gc-notrans':''}"><div class="gc-feedview-head"><div class="gc-head-top">${hero}${oddsHtml}${lastPlay}</div><div class="gc-head-stick">${strip}${drive}${wp}${tabs}</div></div><div class="gc-feedview-feed" onscroll="gcFeedScrolled(this)">${gcFeedHTML(game, sum)}${winbar}</div></div>`;
+  }
   const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.away))}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.home))}</button></div>`;
   const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
   return hero+oddsHtml+top+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
@@ -376,7 +484,7 @@ function gcListHTML(games, picked){
   const midOf=(g)=> g.state==='post' ? '<span class="gc-pfin">FINAL</span>'
     : g.state==='in' ? `<span class="gc-plive"><i class="gc-pdot"></i>${escHtml(String(g.detail||'LIVE').replace(/^(\d+:\d+) - (\d)(st|nd|rd|th)$/i,'Q$2'))}</span>`
     : when(g);
-  return games.map(g=>`<div class="gc-game gc-pill ${g.id===picked?'gc-on':''} gc-${g.state}" onclick="gcPick('${g.id}')" title="${g.away} @ ${g.home}${g.state==='in'?' · '+escAttr(g.detail||'live'):''}">
+  return games.map(g=>`<div class="gc-game gc-pill ${g.id===picked?'gc-on':''} gc-${g.state}" data-key="${escAttr(g.id)}" onclick="gcPick('${g.id}')" title="${g.away} @ ${g.home}${g.state==='in'?' · '+escAttr(g.detail||'live'):''}">
     <span class="gc-pl"><img src="${NFL_LOGO(g.away)}" class="gc-glogo" onerror="this.style.display='none'">${g.state==='pre'?'':`<b class="${g.state==='post'&&g.as>g.hs?'gc-won':''}">${g.as!=null?g.as:'–'}</b>`}</span>
     <span class="gc-pmid">${midOf(g)}</span>
     <span class="gc-pr">${g.state==='pre'?'':`<b class="${g.state==='post'&&g.hs>g.as?'gc-won':''}">${g.hs!=null?g.hs:'–'}</b>`}<img src="${NFL_LOGO(g.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>
@@ -427,7 +535,19 @@ function gcHTML(phone){
   </div>`;
 }
 // The size buttons every state carries.
+// The sidebar's controls, each saying what it does: the two panels as a pair — Leaders
+// (the week's top scorers) and Game Center (one game at a time) — with the one that is up
+// lit, and a chevron that tucks the sidebar away. (They were − and +, which stepped through
+// rail → Leaders → Game Center and read as a size, not a choice.)
 function rsbButtonsHTML(){
+  const ico=(k)=>(typeof TC_ICON==='function')?TC_ICON(k):'';
+  const on=(m)=>_gc.mode===m?' active':'';
+  return `<span class="rsb-btns"><span class="rsb-seg" role="tablist" aria-label="Sidebar panel">`
+    + `<button class="rsb-btn rsb-seg-btn${on('normal')}" role="tab" aria-selected="${_gc.mode==='normal'}" onclick="gcSetMode('normal')" title="Leaders — the week's top scorers">${ico('trophy')}</button>`
+    + `<button class="rsb-btn rsb-seg-btn${on('max')}" role="tab" aria-selected="${_gc.mode==='max'}" onclick="gcSetMode('max')" title="Game Center — one game at a time">${ico('scoreboard')}</button>`
+    + `</span><button class="rsb-btn rsb-hide" onclick="gcSetMode('min')" title="Hide the sidebar" aria-label="Hide the sidebar">${ico('chevr')}</button></span>`;
+}
+function _rsbButtonsLegacy(){
   const i=GC_MODES.indexOf(_gc.mode);
   const dis=(on)=>on?'':' disabled';
   return `<span class="rsb-btns"><button class="rsb-btn" onclick="gcStep(-1)" title="Narrower"${dis(i>0)}>−</button><button class="rsb-btn" onclick="gcStep(1)" title="Wider"${dis(i<GC_MODES.length-1)}>+</button></span>`;
@@ -443,9 +563,10 @@ function renderRightSidebar(){
   el.hidden=false;
   el.classList.remove('rsb-min','rsb-max');
   gcApplyWidth(el);
-  if(_gc.mode==='min'){ el.classList.add('rsb-min'); el.innerHTML=`<div class="rsb-rail"><button class="rsb-btn" onclick="gcStep(1)" title="Wider">+</button><span class="rsb-vert">LEADERS · GAMES</span></div>`; return; }
-  if(_gc.mode==='max'){ el.classList.add('rsb-max'); el.innerHTML=gcHTML(); }
-  else if(typeof renderLeaders==='function') renderLeaders();
+  if(_gc.mode==='min'){ el.classList.add('rsb-min'); el.innerHTML=`<div class="rsb-rail"><button class="rsb-btn rsb-show" onclick="gcOpenLast()" title="Show the sidebar" aria-label="Show the sidebar">${(typeof TC_ICON==='function')?TC_ICON('chevl'):'‹'}</button><span class="rsb-vert">LEADERS · GAMES</span></div>`; return; }
+  if(_gc.mode==='max'){ el.classList.add('rsb-max'); tcMorph(el, rsbGripHTML()+gcHTML()); return; }
+  if(typeof renderLeaders==='function') renderLeaders();
+  if(el.querySelector && el.querySelector('.rsb-grip')) return;   // the grip persists across in-place repaints
   if(el.insertAdjacentHTML) el.insertAdjacentHTML('afterbegin', rsbGripHTML()); else el.innerHTML=rsbGripHTML()+el.innerHTML;
 }
 gcLoadMode();
@@ -477,7 +598,11 @@ function gcmHost(){
   }
   return el;
 }
-function gcmSet(v){ if(!GCM_OPEN.includes(v)) return; _gcm.open=v; renderGamesPhone(); }
+// The slide-up sheet is retired where the bottom bar has a Games tab: anything that used
+// to open the sheet opens that view instead. The sheet code stays as the fallback for a
+// layout without the tab.
+function gcmUseView(){ return gcPhoneOn() && typeof showGamesView==='function' && typeof currentPhase!=='undefined'; }
+function gcmSet(v){ if(!GCM_OPEN.includes(v)) return; if(v!=='closed' && gcmUseView()){ _gcm.open='closed'; showGamesView(); return; } _gcm.open=v; renderGamesPhone(); }
 // A horizontal swipe across the sheet: on the Games page it turns to the next or previous
 // game in kickoff order (past the last game → the Leaders page); on the Leaders page a
 // swipe right returns to the games. The rail (a scroller) and the grab handle keep their
@@ -557,8 +682,95 @@ function gcmBindSwipe(sheet){
   sheet.addEventListener('touchend', end, {passive:true});
   sheet.addEventListener('touchcancel', end, {passive:true});
 }
+// The Games VIEW's swipe. On the phone a horizontal swipe across the game's head — the
+// hero, the line, the last play, the field, the chart, the Feed|Stats row, and the slim
+// scoreboard strip once the head is stuck — turns to the next or the previous game of the
+// week. The stuck part rides the scroll, so the swipe answers at any depth of the plays;
+// the plays themselves keep scrolling vertically, and the win-probability chart keeps its
+// own scrub (a horizontal drag there names a play). Only games turn here, never the
+// Leaders page: that is the tab row's job. Pure: what a touch at this element starts.
+const GCV_SWIPE_ZONE='.games-view .gc-feedview-head, .games-view .gc-detail > .gc-herowrap, .games-view .gc-detail > .gc-odds, .games-view .gc-detail > .gc-last, .games-view .gc-detail > .gc-drive, .games-view .gc-detail > .gc-wp, .games-view .gc-detail > .gc-tabs';
+const GCV_SWIPE_KEEP='.gc-wp-svg, .gc-wp-call, select, input, button.gc-wp-head';
+function gcvSwipeZone(target){
+  if(!target || !target.closest) return null;
+  if(target.closest(GCV_SWIPE_KEEP)) return null;
+  return target.closest(GCV_SWIPE_ZONE);
+}
+// What a head swipe of dx does: the neighbouring game, or nothing at either end of the week.
+function gcvSwipeAction(dx){ const a=gcmSwipeAction(dx, 'games'); return (a && a.game) ? a : null; }
+const _gcv={swiping:false};
+function gcvBindHeadSwipe(host){
+  if(!host || !host.addEventListener || host._gcvSwipe) return; host._gcvSwipe=true;
+  let x0=null, y0=null, axis=null, zone=null, panel=null, act=null, dx=0;
+  const start=e=>{ const t=e.touches&&e.touches[0]; if(!t || (e.touches.length!==1)) return;
+    zone=gcvSwipeZone(e.target); if(!zone) return;
+    panel=zone.closest('.gc-detail'); if(!panel){ zone=null; return; }
+    x0=t.clientX; y0=t.clientY; axis=null; dx=0; act=null; };
+  const move=e=>{ if(x0==null || !zone) return; const t=e.touches&&e.touches[0]; if(!t) return;
+    const ddx=t.clientX-x0, ddy=t.clientY-y0;
+    if(!axis){
+      if(Math.abs(ddx)<10 && Math.abs(ddy)<10) return;
+      axis = Math.abs(ddx)>Math.abs(ddy) ? 'x' : 'y';
+      if(axis==='x'){
+        act=gcvSwipeAction(Math.sign(ddx)*100); _gcv.swiping=true; _gcm.swiping=true;
+        // The whole panel moves as one layer, and the neighbouring game's panel rides in
+        // beside it under the finger — the app's tab pages, in the Game Center. The
+        // neighbour's stuck block is sticky in its own layer, so deep in the plays it
+        // arrives already pinned at the top, exactly where this game's is.
+        gcmSwipeLayer(panel); panel.classList.add('ts-swipe-dragging');
+        if(act && typeof tsSwipeUnder==='function'){ const under=tsSwipeUnder(panel); under.style.transition='none'; under.innerHTML=gcmSwipePreviewHTML(act);
+          // Deep in the plays this game's strip is showing: the neighbour arrives with its own.
+          try{ const cur=panel.querySelector('.gc-feedview.gc-stuck'), nfv=under.querySelector('.gc-feedview'); if(cur && nfv) nfv.classList.add('gc-stuck'); }catch(e){}
+          // The stuck block pins only within its own pane: make the neighbour's reach past
+          // the bottom of the screen whatever it holds (its plays load once it is picked),
+          // so the block has room to pin at the top beside this one's.
+          try{ const fv=under.querySelector('.gc-feedview'); if(fv) fv.style.minHeight=Math.round((window.scrollY||0)+(window.innerHeight||0)+40)+'px'; }catch(e){} }
+      }
+    }
+    if(axis!=='x') return;
+    e.stopPropagation(); if(e.cancelable) e.preventDefault();          // the head owns this swipe: no page scroll, no tab turn
+    dx=ddx;
+    const w=(typeof tsHostWidth==='function')?tsHostWidth(panel):320;
+    const top=gcmSwipeLayer(panel); top.style.transition='none';
+    // Past the first or last game the panel only leans, and springs back: nowhere to turn.
+    if(act && typeof tsPlacePair==='function') tsPlacePair(panel, Math.sign(dx)*Math.min(w, Math.abs(dx)*0.9), dx<0?-1:1);
+    else top.style.transform=`translateX(${(dx*0.22).toFixed(1)}px)`;
+  };
+  const end=e=>{ if(x0==null) return; const wasX=axis==='x', fdx=dx, a=act, p=panel; x0=null; axis=null; zone=null; panel=null;
+    if(!wasX || !p) return;
+    e.stopPropagation();
+    const w=(typeof tsHostWidth==='function')?tsHostWidth(p):320;
+    const top=gcmSwipeLayer(p), under=p.querySelector(':scope > .ts-swipe-under');
+    const done=()=>{ _gcv.swiping=false; _gcm.swiping=false; };
+    if(a && Math.abs(fdx)>=60){
+      top.style.transition='transform .18s ease-out'; top.style.transform=`translateX(${fdx<0?-w:w}px)`;
+      if(under){ under.style.transition='transform .18s ease-out'; under.style.transform='translateX(0px)'; }
+      setTimeout(()=>{ p.classList.remove('ts-swipe-dragging'); done(); gcvTurn(a.game); }, 170);
+    } else {
+      top.style.transition='transform .16s ease-out'; top.style.transform='translateX(0px)';
+      if(under){ under.style.transition='transform .16s ease-out'; under.style.transform=`translateX(${fdx<0?w:-w}px)`; }
+      setTimeout(()=>{ p.classList.remove('ts-swipe-dragging'); if(under) under.innerHTML=''; top.style.transition=''; done(); if(gcInGamesView()) renderGamesView(); }, 170);
+    }
+  };
+  host.addEventListener('touchstart', start, {passive:true});
+  host.addEventListener('touchmove', move, {passive:false});
+  host.addEventListener('touchend', end, {passive:true});
+  host.addEventListener('touchcancel', end, {passive:true});
+}
+// Turn to the game a head swipe reached. The page keeps its depth: the neighbour's panel
+// that slid in is what the repaint now draws for real, stuck block and all, so the turn
+// is seamless; a game with less to scroll simply clamps to its end.
+function gcvTurn(id){ gcPick(id); }
+// The games either side of the picked one get their summary fetched once, ahead of a swipe,
+// so the panel that slides in carries its field and chart rather than "loading the plays".
+// Once only: a neighbour's live summary is not polled, the pick refreshes it.
+function gcvPrefetchNeighbours(){
+  if(typeof gcSummary!=='function' || typeof _gcd==='undefined') return;
+  const games=gcmCurrentGames()||[]; const i=games.findIndex(g=>g.id===_gc.game); if(i<0) return;
+  for(const g of [games[i-1], games[i+1]]){ if(g && g.eid && !_gcd.sum[g.eid]) { try{ gcSummary(g); }catch(e){} } }
+}
 // The picker bar's live line and the pill both open straight to a game.
-function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; if(gcInGamesView()){ renderGamesView(); return; } _gcm.open='full'; renderGamesPhone(); }
+function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; gcFeedReset(); if(gcInGamesView()){ renderGamesView(); return; } if(gcmUseView()){ _gcm.open='closed'; showGamesView(); return; } _gcm.open='full'; renderGamesPhone(); }
 // The mobile bottom bar's Games tab is a full top-level VIEW (like Projections / Rankings /
 // Leagues), rendered into #content — not the old slide-up sheet. These drive it.
 function gcInGamesView(){ return typeof currentPhase!=='undefined' && currentPhase==='Games'; }
@@ -589,15 +801,28 @@ function renderGamesView(){
   const page = tab==='leaders' && typeof ldPanelHTML==='function'
     ? `<div class="gc gcm-leaders">${ldPanelHTML(width, '', false, true)}</div>`
     : gcHTML(true);
-  host.innerHTML=`<div class="games-view">${gcmTabsHTML()}${page}</div>`;
+  tcMorph(host, `<div class="games-view">${gcmTabsHTML()}${page}</div>`);   // in place: only what moved repaints
+  gcvBindHeadSwipe(host);   // once: the head's swipe between games, delegated so repaints keep it
+  if(tab!=='leaders') gcvPrefetchNeighbours();
+  // Settle the fresh pane after the paint (open, at the top of its plays, strip shown if the
+  // head is already stuck) — a game swapped to deep in the plays used to wait for a scroll.
+  if(typeof gcFeedBalance==='function' && typeof window!=='undefined' && window.requestAnimationFrame) window.requestAnimationFrame(gcFeedBalance);
   const body=host.querySelector('.gc-body'), rail=host.querySelector('.gc-list');
   if(body) body.scrollTop=keep.body;
-  if(rail){ const on=rail.querySelector('.gc-on'); if(on && on.scrollIntoView && !rail0) on.scrollIntoView({block:'nearest', inline:'center'}); else rail.scrollLeft=keep.rail; }
-  const wkOn=host.querySelector('.gc-wk-on'); if(wkOn && wkOn.scrollIntoView) wkOn.scrollIntoView({block:'nearest', inline:'center'});
+  // Centre the picked chips in their rails sideways only: scrollIntoView also scrolls the
+  // PAGE to the rail, which yanked a reader deep in the plays back up on every repaint.
+  if(rail){ const on=rail.querySelector('.gc-on'); if(on && !rail0) gcCentreChip(rail, on); else rail.scrollLeft=keep.rail; }
+  const wkOn=host.querySelector('.gc-wk-on'); if(wkOn) gcCentreChip(wkOn.parentElement, wkOn);
   if(gcWeek()===gcCurWeek() && typeof window!=='undefined' && typeof window.setTimeout==='function'
      && (typeof document==='undefined' || document.visibilityState!=='hidden')){
     _gcm.timer=window.setTimeout(()=>{ _gcm.timer=null; if(gcInGamesView()){ if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', renderGamesView); else renderGamesView(); } }, 61*1000);
   }
+}
+// Scroll a rail sideways so a chip sits in its middle, and nothing else moves.
+function gcCentreChip(rail, chip){
+  if(!rail || !chip || !rail.getBoundingClientRect || !chip.getBoundingClientRect) return;
+  const r=rail.getBoundingClientRect(), c=chip.getBoundingClientRect(); if(!r.width) return;
+  rail.scrollLeft=Math.max(0, (rail.scrollLeft||0)+(c.left+c.width/2)-(r.left+r.width/2));
 }
 // Repaint whichever Game-Center surface is live: the full view, or (legacy) the sheet.
 function gcSheetRepaint(){ if(gcInGamesView()) renderGamesView(); else if(typeof renderGamesPhone==='function') renderGamesPhone(); }
@@ -620,7 +845,7 @@ function gcmCurrentGames(){
 // The sheet's two pages: the week's games, and the Leaders — the same ranked list the
 // desktop sidebar shows (weekly high scores by position, sortable), in the phone's drawer.
 const GCM_TABS=[['games','Games'],['leaders','Leaders']];
-function gcmSetTab(t){ if(!GCM_TABS.some(x=>x[0]===t)) return; _gcm.tab=t; if(!gcInGamesView() && _gcm.open==='closed') _gcm.open='half'; gcSheetRepaint(); }
+function gcmSetTab(t){ if(!GCM_TABS.some(x=>x[0]===t)) return; _gcm.tab=t; if(!gcInGamesView() && _gcm.open==='closed'){ if(gcmUseView()){ showGamesView(); return; } _gcm.open='half'; } gcSheetRepaint(); }
 function gcmTabsHTML(){
   const cur=_gcm.tab||'games';
   return `<div class="ld-posrow gcm-tabs">${GCM_TABS.map(([k,l])=>`<button class="ld-pos ${cur===k?'active':''}" onclick="gcmSetTab('${k}')">${l}</button>`).join('')}</div>`;
@@ -690,13 +915,15 @@ function renderGamesPhone(fromLoad){
     : tab==='leaders' && typeof ldPanelHTML==='function'
       ? `<div class="gc gcm-leaders">${ldPanelHTML(width, closeBtn, fromLoad, true)}</div>`
       : gcHTML(true);
-  host.innerHTML=`${gcmPillHTML(games)}
+  // Patched in place (tcMorph): a live repaint lands as the few nodes that changed, not a
+  // fresh 200 KB subtree — the sheet element, its scroll and its swipe binding all persist.
+  tcMorph(host, `${gcmPillHTML(games)}
     <div class="gcm-scrim" onclick="gcmSet('closed')"></div>
     <div class="gcm-sheet gcm-${open}" aria-label="Game Center" aria-hidden="${open==='closed'}">
       <div class="gcm-grab" onpointerdown="gcmDragStart(event)"></div>
       ${open==='closed' ? '' : gcmTabsHTML()}
       ${page}
-    </div>`;
+    </div>`);
   if(document.body&&document.body.classList) document.body.classList.toggle('gcm-open', open!=='closed');
   // An open sheet locks the page behind it, like the player card does (html.pcard-locked):
   // nothing under an overlay scrolls, on any platform.
@@ -716,4 +943,86 @@ function renderGamesPhone(fromLoad){
      && (typeof document==='undefined' || document.visibilityState!=='hidden')){
     _gcm.timer=window.setTimeout(()=>{ _gcm.timer=null; if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', renderGamesPhone); else renderGamesPhone(); }, 61*1000);
   }
+}
+
+// ── The balance between the pinned field and the scrolling plays ───────────────────
+// On the sidebar's feed the hero, the field and the win probability stay put while the plays
+// scroll underneath. Pinned at full height they left the plays two rows of room. So the
+// block CONDENSES the moment the feed is scrolled — the hero to one slim line, the last-play
+// text, the odds, the drive sentence and the win-probability chart folded away, the field
+// kept — and opens back up at the top of the feed. A pane too short to give the plays a fair
+// window starts condensed. The flag lives in _gcd so a repaint keeps the state; the class is
+// toggled in place so a scroll never costs a repaint.
+function gcFeedScrolled(el){
+  try{
+    if(!el) return;
+    const y=el.scrollTop||0;
+    if(y>28 && !_gcd.condensed) gcFeedCondense(true, el);
+    else if(y<6 && _gcd.condensed) gcFeedCondense(false, el);
+  }catch(e){}
+}
+function gcFeedCondense(on, feedEl){
+  _gcd.condensed=!!on;
+  const fv=feedEl ? feedEl.closest('.gc-feedview') : document.querySelector('.gc-feedview');
+  if(fv && fv.classList) fv.classList.toggle('gc-condensed', !!on);
+}
+// After a paint: if the open block leaves the plays under their share of the pane, condense
+// from the start (and remember it was the pane's height, not a scroll, that did it).
+// A new game, week or tab starts the block open and unpinned: the state is the reader's
+// scroll, and a fresh pane has none. Without this a game switched to while condensed stayed
+// condensed at the top of its plays with nothing to open it, and the phone's hand-pinned
+// head could outlive the pane it was pinned for.
+function gcFeedReset(){
+  _gcd.condensed=false; _gcd.stuck=false;
+  _gcd.feedFresh=true;   // the next paint lands open with no transition: a swap is a cut, not a fold
+  try{ document.querySelectorAll('.gc-feedview').forEach(fv=>{ fv.classList.remove('gc-condensed'); fv.classList.remove('gc-stuck'); }); }catch(e){}
+}
+// After a paint. A fresh pane (a game, week or tab just switched to) lands OPEN, at the top
+// of its plays, with the fold's transitions off for that first frame — swapping games used
+// to fold the block on screen every time, which read as a stunt. The reader folds it by
+// scrolling into the plays and opens it by scrolling back up; nothing folds it for them.
+function gcFeedBalance(){
+  try{
+    const fv=document.querySelector('.gc-detail .gc-feedview'); if(!fv) return;
+    const feed=fv.querySelector('.gc-feedview-feed'); if(!feed) return;
+    if(_gcd.feedFresh){
+      _gcd.feedFresh=false;
+      if(feed.scrollTop>0) feed.scrollTop=0;   // the scroll keeper may have carried the old game's offset over
+      fv.classList.add('gc-notrans');
+      const off=()=>{ try{ fv.classList.remove('gc-notrans'); }catch(e){} };
+      if(window.requestAnimationFrame) window.requestAnimationFrame(()=>window.requestAnimationFrame(off)); else off();
+      setTimeout(off, 320);   // and in any case before the reader's first scroll could fold it
+    }
+    const inner = window.getComputedStyle ? window.getComputedStyle(feed).overflowY==='auto' : true;
+    if(!inner){ gcFeedWatchScroll(window); return; }   // the phone: the page scrolls, and the pin follows it
+    if(_gcd.condensed && feed.scrollTop<6) gcFeedCondense(false, feed);   // at the top of the plays: open
+  }catch(e){}
+}
+// The phone: the whole page (or the sheet's body) scrolls and the block is sticky, so the
+// scroll to watch is that scroller's. The signal is the feed view's own top passing the
+// scroller's top — not an inner scrollTop — which holds whatever sits above it.
+// The phone: the page (or the sheet's body) scrolls and the stick part pins itself. The
+// only thing to do on scroll is say whether it IS pinned — the hero gone above — so the
+// slim score strip can fade in. No condensing, no hand pin, nothing that changes a height.
+function gcFeedWatchScroll(scroller){
+  try{
+    const fv=document.querySelector('.gc-feedview'); if(!fv) return;
+    const feed=fv.querySelector('.gc-feedview-feed');
+    if(feed && window.getComputedStyle && window.getComputedStyle(feed).overflowY==='auto') return;   // the desktop window has its own handler
+    const stick=fv.querySelector('.gc-head-stick'); if(!stick) return;
+    const isWin=(scroller===window || !scroller || !scroller.getBoundingClientRect);
+    const top0=isWin ? 0 : scroller.getBoundingClientRect().top;
+    const stickTop=parseFloat((window.getComputedStyle ? window.getComputedStyle(stick).top : '0'))||0;
+    const stuck = stick.getBoundingClientRect().top <= top0 + stickTop + 1 && fv.getBoundingClientRect().top < top0 - 8;
+    // Always set the class, not only on a change: a repaint (a play tapped for replay) used
+    // to rebuild the pane without it while the state still said stuck, and the strip vanished.
+    _gcd.stuck=stuck; fv.classList.toggle('gc-stuck', stuck);
+  }catch(e){}
+}
+if(typeof window!=='undefined' && window.addEventListener){
+  window.addEventListener('resize', ()=>{ try{ if(window.requestAnimationFrame) window.requestAnimationFrame(gcFeedBalance); else gcFeedBalance(); }catch(e){} });
+  window.addEventListener('scroll', ()=>gcFeedWatchScroll(window), {passive:true});
+}
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('scroll', (e)=>{ const t=e.target; if(t && t.classList && t.classList.contains('gc-body')) gcFeedWatchScroll(t); }, true);
 }

@@ -12,7 +12,7 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`
   toast=function(){};
-  return { range:_advComputeOlRangeTables, score:_rbRunScoreAndRankFromTable, setNV:(n)=>{NFLVERSE=n;}, clear:()=>{_advOlRangeCache={};},
+  return { range:_advComputeOlRangeTables, score:_rbRunScoreAndRankFromTable, setNV:(n)=>{NFLVERSE=n;}, clear:()=>{_advOlRangeCache={};}, tables:olSeasonTables, ensure:olEnsureWeekly,
            form:_laOlForm, boards:_laOlFormBoards, pane:laOlineView, season:laSeasonView, TC_SEASON, laState, setWin:laSetOlWin,
            setEnsure:(f)=>{ensureNflverseSection=f;}, resetWeeklySeed:()=>{_advWeeklySeedReady=false;_advWeeklySeedLoading=false;},
            badge:_advCurrentOlBadge, setActive:(s)=>{activeSeason=s;}, setLive:(b)=>{tcIsLiveSeason=()=>b;},
@@ -202,5 +202,24 @@ chk(/Week 2/.test(body) && /Pressure Rate/.test(body) && /Hit Rate/.test(body) &
 app.setNV({'2026':{ol_weekly:pack, team:teamOl}});
 chk(app.lagBtn('offensive_line_pass','2026')==='', 'no button once the week is actually charted');
 
+
+console.log('=== one scorer for every surface: olSeasonTables ===');
+app.clear(); app.setLive(true); app.TC_SEASON.phase='regular'; app.TC_SEASON.week=3;
+app.setNV({'2026':{ol_weekly:pack, team:{offensive_line_pass:{columns:['Pass Score'], teams:{KC:{values:{'Pass Score':99}, ranks:{'Pass Score':1}}}}, offensive_line_run:{columns:['Run Score'], teams:{KC:{values:{'Run Score':99}, ranks:{'Run Score':1}}}}}}});
+const t1=app.tables('2026');
+chk(t1 && t1.source==='weekly' && t1.lo===1 && t1.hi===2 && t1.passTbl.teams.KC.values['Pass Score']===app.range('2026',1,2).passTbl.teams.KC.values['Pass Score'],
+    `the live season: the weekly recompute over the completed weeks (1–${t1&&t1.hi}), not the builder's season table (99)`);
+app.TC_SEASON.week=1; app.clear();
+const t0=app.tables('2026');
+chk(t0 && t0.source==='season' && t0.passTbl.teams.KC.values['Pass Score']===99, 'before the first completed week there is nothing to recompute: the season table stands in');
+app.setLive(false); app.clear();
+const tp=app.tables('2026');
+chk(tp && tp.source==='weekly' && tp.hi===18, 'a finished season reads weeks 1–18');
+app.setNV({'2026':{team:{offensive_line_pass:{columns:['Pass Score'], teams:{KC:{values:{'Pass Score':99}, ranks:{'Pass Score':1}}}}}}});
+chk(app.tables('2026').source==='season', 'no weekly sidecar for the season: the builder\'s table');
+let asked=[]; app.setEnsure(async(sec,season)=>{ asked.push(sec+':'+season); return true; });
+let painted=0; const kicked=app.ensure('2026', ()=>{ painted++; });
+chk(kicked===true && asked.includes('ol_weekly:2026'), 'a card without the weekly sidecar asks for it once');
+chk(app.ensure('2026', ()=>{})===false, '… and does not ask again while the first ask is out');
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);

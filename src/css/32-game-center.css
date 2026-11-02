@@ -1,6 +1,7 @@
 /* ── The right sidebar's sizes: a rail, the Leaders list, the Game Center ── */
 .rsb-btns{display:inline-flex;gap:3px;margin-left:auto;flex:none;}
 .ld-fmt{display:flex;align-items:center;gap:6px;min-width:0;}
+.ld-fmt .ld-sel{margin-left:auto;flex:none;}
 .ld-fmt>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .rsb-btn{font:inherit;font-size:11px;font-weight:900;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:10px;width:22px;height:22px;line-height:1;cursor:pointer;padding:0;}
 .rsb-btn:hover{color:var(--text);border-color:var(--accent);}
@@ -50,8 +51,10 @@
    happens, two pieces of type never sit on top of each other. */
 .gc-team{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 /* the codes as faded wordmarks behind each side */
-.gc-hero-wm{position:absolute;top:50%;transform:translateY(-52%);font-size:46px;font-weight:900;letter-spacing:-.04em;color:#fff;opacity:.07;pointer-events:none;line-height:1;}
-.gc-hero-wm-a{left:-6px;} .gc-hero-wm-h{right:-6px;}
+/* the club's logo, big and faded, behind each side — the player card's own device */
+.gc-hero-wm{position:absolute;top:50%;transform:translateY(-50%);width:112px;height:112px;object-fit:contain;opacity:.17;pointer-events:none;transition:opacity .3s ease;}
+.gc-hero-wm-a{left:-14px;} .gc-hero-wm-h{right:-14px;}
+.gc-hero .gc-logo{display:none;}   /* the watermark IS the logo; the small one returns on the condensed line */
 .gc-side{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;}
 .gc-side-home{align-items:flex-end;}
 .gc-side .gc-logo{margin-bottom:2px;}
@@ -181,7 +184,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 /* Hero — bigger, bolder, the two clubs' colours behind (Sleeper's game header). */
 .games-view .gc-detail{overflow:visible;}
 .games-view .gc-hero{padding:16px 14px 14px;border-radius:20px;margin:2px 0 10px;border-bottom:none;}
-.games-view .gc-hero-wm{font-size:58px;}
+.games-view .gc-hero-wm{width:136px;height:136px;}
 .games-view .gc-logo{width:34px;height:34px;}
 .games-view .gc-team{font-size:18px;}
 .games-view .gc-score{font-size:36px;}
@@ -283,10 +286,65 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-feedview-head{flex:none;padding:0 0 2px;}
 .gc-feedview-feed{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 0 12px;}
 .gc-feedview-head .gc-tabs{margin:8px 10px 6px;}
-/* the phone sheet scrolls as one page — no inner scroll window there */
-.gcm-sheet .gc-detail:has(.gc-feedview){display:block;overflow:visible;}
-.gcm-sheet .gc-feedview,.gcm-sheet .gc-feedview-head{display:block;}
-.gcm-sheet .gc-feedview-feed{overflow:visible;min-height:0;}
+/* condensed: once the plays are scrolled (or the pane is short) the pinned block shrinks to a
+   slim score line and the field — the plays get the room; the field stays for a tapped replay */
+.gc-feedview .gc-hero{transition:padding .3s ease,gap .3s ease;}
+.gc-feedview .gc-score,.gc-feedview .gc-team,.gc-feedview .gc-status{transition:font-size .3s ease;}
+.gc-feedview .gc-last,.gc-feedview .gc-odds,.gc-feedview .gc-drive-sum,.gc-feedview .gc-wp-svg,.gc-feedview .gc-wp-src{display:block;max-height:300px;overflow:hidden;transition:max-height .3s ease,min-height .3s ease,opacity .22s ease,padding .3s ease,margin .3s ease;}
+.gc-feedview.gc-condensed .gc-hero{padding:5px 10px 4px;gap:6px;}
+.gc-feedview.gc-condensed .gc-hero .gc-logo{display:inline-block;width:18px;height:18px;margin:0;}
+.gc-feedview.gc-condensed .gc-hero-wm{opacity:0;}
+.gc-feedview.gc-condensed .gc-side{flex-direction:row;align-items:center;gap:6px;}
+.gc-feedview.gc-condensed .gc-side-home{flex-direction:row-reverse;}
+.gc-feedview.gc-condensed .gc-rec,.gc-feedview.gc-condensed .gc-to,.gc-feedview.gc-condensed .gc-src,.gc-feedview.gc-condensed .gc-spot:empty{display:none;}
+.gc-feedview.gc-condensed .gc-team{font-size:12px;}
+.gc-feedview.gc-condensed .gc-score{font-size:20px;}
+.gc-feedview.gc-condensed .gc-mid{gap:2px;}
+.gc-feedview.gc-condensed .gc-status{font-size:9.5px;padding:2px 7px;}
+.gc-feedview.gc-condensed .gc-odds,.gc-feedview.gc-condensed .gc-last,.gc-feedview.gc-condensed .gc-drive-sum,.gc-feedview.gc-condensed .gc-wp-svg,.gc-feedview.gc-condensed .gc-wp-src{max-height:0;min-height:0;opacity:0;padding-top:0;padding-bottom:0;margin-top:0;margin-bottom:0;border-width:0;}
+.gc-feedview.gc-condensed .gc-wp-call{display:none;}
+.gc-feedview.gc-notrans,.gc-feedview.gc-notrans *{transition:none!important;}   /* measuring, not animating */
+@media (prefers-reduced-motion:reduce){ .gc-feedview .gc-hero,.gc-feedview .gc-score,.gc-feedview .gc-team,.gc-feedview .gc-status,.gc-feedview .gc-last,.gc-feedview .gc-odds,.gc-feedview .gc-drive-sum,.gc-feedview .gc-wp-svg,.gc-feedview .gc-wp-src,.gc-hero-wm{transition:none;} }
+.gc-feedview.gc-condensed .gc-drive{margin-top:4px;}
+.gc-feedview.gc-condensed .gc-feedview-head .gc-tabs{margin:4px 10px 4px;}
+.gc-feedview .gc-feedview-head{transition:none;}
+/* the phone — the bottom sheet and the full-page Games view — scrolls as one page, no inner
+   scroll window; there the pinned block is STICKY at the top of that page, so the field stays
+   in view while the plays scroll under it, and it condenses on the same scroll (the window's,
+   or the sheet's body, watched in gcFeedWatchScroll) */
+.gcm-sheet .gc-detail:has(.gc-feedview),.games-view .gc-detail:has(.gc-feedview){display:block;overflow:visible;}
+.gcm-sheet .gc-feedview,.gcm-sheet .gc-feedview-head,.games-view .gc-feedview,.games-view .gc-feedview-head{display:block;}
+.gcm-sheet .gc-feedview-feed,.games-view .gc-feedview-feed{overflow:visible;min-height:0;}
+/* the page's content column clips sideways with overflow-x:hidden, which makes it a scroll
+   container and kills position:sticky inside it; `clip` clips without that side effect */
+@media (max-width:760px){
+  body:has(.games-view) .content{overflow-x:clip;}
+  /* the phone's body is an overflow:auto box too — it never scrolls (the viewport does), but
+     a sticky box inside it anchors to it all the same; clip sideways, let the vertical be */
+  body:has(.games-view):not(.gcm-open){overflow-x:clip;overflow-y:visible;}
+}
+/* a sticky box can only stick inside its parent, and the head's box ends where the stick part
+   ends — so on the phone the head wrapper dissolves (display:contents) and the stick part's
+   containing block is the whole feed view, plays and all */
+.gcm-sheet .gc-feedview-head,.games-view .gc-feedview-head{display:contents;}
+.gcm-sheet .gc-head-stick,.games-view .gc-head-stick{position:sticky;top:0;z-index:3;background:var(--surface);}
+.gcm-sheet .gc-head-stick{top:56px;}   /* under the sheet's sticky rail of games */
+.games-view .gc-feedview.gc-stuck .gc-head-stick,.gcm-sheet .gc-feedview.gc-stuck .gc-head-stick{box-shadow:0 6px 16px rgba(0,0,0,.35);}
+/* A swipe across the head slides the whole panel aside and the neighbouring game's panel in
+   beside it. The panel is NOT clipped here (the page's overflow-x clip does that): an overflow
+   on it would unpin the stuck block mid-gesture. The underlay grows to the neighbour's own
+   height and stays unclipped, so its stuck block is sticky too and arrives already pinned. */
+.games-view .gc-detail{position:relative;}
+.games-view .gc-detail > .ts-swipe-under{overflow:visible;bottom:auto;background:var(--bg);}
+/* the slim score strip: always in the stick part's layout (so pinning never changes a height),
+   invisible until the hero has scrolled off, then faded in */
+.gc-stick-score{display:none;}
+.gcm-sheet .gc-stick-score,.games-view .gc-stick-score{display:flex;align-items:center;justify-content:center;gap:10px;height:30px;padding:0 10px;font-size:13px;font-weight:800;color:var(--text);opacity:0;transition:opacity .2s ease;}
+.gc-feedview.gc-stuck .gc-stick-score{opacity:1;}
+.gc-ss-side{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;} .gc-ss-side .gc-glogo{width:18px;height:18px;}
+.gc-ss-num{font-size:17px;font-weight:900;} .gc-ss-mid{font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+/* on the phone the fold is the scroll itself: the top part scrolls away, the stick part stays */
+
 .gcf-bar{display:flex;align-items:center;gap:6px;margin:2px 0 6px;font-size:10px;color:var(--muted);}
 .gcf-bar span{flex:1;}
 .gcf{display:flex;flex-direction:column;gap:6px;}
@@ -372,7 +430,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcf-now-dd{color:var(--text);}
 .gcf-now-clock{margin-left:auto;font-weight:800;color:var(--text);}
 .gcf-dot{width:8px;height:8px;border-radius:50%;background:#ff4d4d;box-shadow:0 0 0 0 rgba(255,77,77,.6);animation:gcfPulse 1.4s ease-out infinite;}
-@keyframes gcfPulse{0%{box-shadow:0 0 0 0 rgba(255,77,77,.6);}100%{box-shadow:0 0 0 8px rgba(255,77,77,0);}}
+@keyframes gcfPulse{0%{opacity:1;}100%{opacity:.3;}}   /* opacity only — see tcGsPulse */
 .gcf-new{animation:gcfIn .9s ease-out;}
 @keyframes gcfIn{0%{background:rgba(0,212,170,.28);transform:translateY(-4px);}100%{background:var(--surface2);transform:none;}}
 @media (prefers-reduced-motion:reduce){ .gcf-dot,.gcf-new{animation:none;} }
@@ -458,6 +516,21 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-wp-head .rt-gp-caret{color:var(--muted);}
 .gc-wp-svg{width:100%;height:auto;display:block;padding:0 8px;box-sizing:border-box;}
 .gc-wp-src{font-size:8.5px;color:var(--muted);letter-spacing:.04em;font-weight:700;padding:2px 9px 6px;}
+.gc-wp-lab{font-size:11px;font-weight:900;fill:#f6f8fb;font-family:inherit;}
+.gc-wp-lab2{font-size:8.5px;font-weight:700;fill:#aeb8d0;font-family:inherit;}
+/* a tap on the line names the play: a marker on the point, a bubble over the chart */
+.gc-wp{position:relative;}
+.gc-wp-svg{touch-action:pan-y;cursor:crosshair;}
+.gc-wp-hit{pointer-events:all;}
+.gc-wp-call{position:absolute;z-index:3;top:34px;transform:translate(-50%,-100%);display:flex;flex-direction:column;gap:1px;padding:6px 10px;border-radius:10px;
+  background:var(--surface3,#1b2230);border:1px solid var(--border);box-shadow:0 6px 18px rgba(0,0,0,.45);color:var(--text);font-size:11px;line-height:1.3;max-width:min(78%,300px);cursor:pointer;}
+.gc-wp-call::after{content:"";position:absolute;left:50%;bottom:-6px;width:10px;height:10px;background:inherit;border-right:1px solid var(--border);border-bottom:1px solid var(--border);transform:translateX(-50%) rotate(45deg);}
+.gc-wp-call-r{transform:translate(-88%,-100%);} .gc-wp-call-r::after{left:88%;}
+.gc-wp-call-l{transform:translate(-12%,-100%);} .gc-wp-call-l::after{left:12%;}
+.gc-wp-c1{font-size:9.5px;font-weight:800;letter-spacing:.04em;color:var(--muted);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.gc-wp-c2{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.gc-wp-c3{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:11.5px;font-weight:900;}
+.gc-wp-move{font-size:10px;margin-left:2px;} .gc-wp-up{color:var(--success);} .gc-wp-dn{color:var(--danger);}
 /* ── The games as pills ── */
 .gc-game.gc-pill{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 8px;border-left:1px solid var(--border);}
 .gc-game.gc-pill.gc-on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);}
@@ -489,7 +562,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 /* the hero */
 .gc-detail .gc-hero,.games-view .gc-hero,.gcm-sheet .gc-hero{background:linear-gradient(180deg,var(--gcn3) 0%,var(--gcn) 100%);border:none;border-radius:24px;padding:18px 16px 16px;margin:2px 0 8px;gap:10px;}
 .gc-detail .gc-hero::before{display:none;}
-.gc-detail .gc-hero-wm{font-size:64px;opacity:.06;letter-spacing:-.05em;}
+.gc-detail .gc-hero-wm{width:132px;height:132px;opacity:.17;}
 .gc-detail .gc-logo{width:30px;height:30px;}
 .gc-detail .gc-team,.games-view .gc-team,.gcm-sheet .gc-team{font-size:19px;font-weight:800;letter-spacing:-.01em;line-height:1.1;}
 .gc-detail .gc-rec{font-size:12px;color:var(--gcmute);font-weight:600;}
@@ -500,7 +573,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-detail .gc-spot{font-size:12px;font-weight:600;color:var(--gcmute);}
 .gc-src{font-size:11px;font-weight:600;color:var(--gcmute);opacity:.75;}
 .gc-detail .gc-to i{width:7px;height:7px;background:#2a3356;} .gc-detail .gc-to i.on{background:#e7ecf7;}
-.gc-detail .gc-ball{color:#fff;}
+.gc-detail .gc-ball{color:#f0a355;} .gc-ball .tc-ico{width:15px;height:15px;}
 /* the odds strip and the line score: tonal, no border */
 .games-view .gc-odds,.gc-detail .gc-odds{border:none;background:var(--gcn2);border-radius:18px;}
 .games-view .gcls-wrap{border:none;background:var(--gcn2);border-radius:18px;}
@@ -684,3 +757,25 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
    line still grows rather than being clipped, because the words matter more than the pixel. */
 .gc-last-text,.gc-detail .gc-last-text{min-height:2.6em;}
 .gc-drive-sum,.gc-detail .gc-drive-sum{min-height:2.8em;}
+
+/* ── the score breakdown: a tap on the number ── */
+.gc-ptsbox-tap{cursor:pointer;border-radius:8px;padding:2px 4px;margin:-2px -4px;}
+.gc-ptsbox-tap:active{background:var(--surface3);}
+.tc-brk{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums;}
+.tc-brk th,.tc-brk td{padding:5px 6px;border-top:1px solid var(--border);text-align:left;}
+.tc-brk thead th{border-top:none;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);}
+.tc-brk .n{text-align:right;white-space:nowrap;}
+.tc-brk tr.neg td{color:var(--danger);}
+.tc-brk tfoot td{font-weight:900;border-top:2px solid var(--border2);}
+.tc-brk-src,.tc-brk-none{font-size:11px;color:var(--muted);margin-top:6px;}
+
+/* the sidebar's controls: Leaders | Game Center as a pair, the hide chevron beside them */
+.rsb-seg{display:inline-flex;border:1px solid var(--border);border-radius:11px;overflow:hidden;background:var(--surface2);}
+.rsb-seg .rsb-btn{border:none;border-radius:0;background:transparent;width:26px;}
+.rsb-seg .rsb-btn+.rsb-btn{border-left:1px solid var(--border);}
+.rsb-seg .rsb-btn.active{background:var(--accent);color:var(--on-accent,#fff);}
+.rsb-seg .rsb-btn.active:hover{color:var(--on-accent,#fff);}
+.rsb-btn .tc-ico{width:14px;height:14px;vertical-align:-2px;}
+.rsb-hide,.rsb-show{width:24px;}
+.rsb-seg .rsb-btn.active .tc-ico,.rsb-seg .rsb-btn.active:hover .tc-ico{color:var(--on-accent,#fff);}
+.rsb-btn .tc-ico{color:currentColor;}

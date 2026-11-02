@@ -49,7 +49,7 @@ const app=new Function('IDS','SUM', code+`
         if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
         return prev(url); }; },
     sideClass:gcSideClass, setWeekNum:(w)=>{ _gc.week=w; _gc._mu=null; }, liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
-    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, stubContent:(fn)=>{ renderContent=fn; }, setLiveView:(v)=>{ currentProjViewMode=()=>v?'live':'proj'; }, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, punt:gcPuntRead, pen:gcPenaltyRead, kickoff:gcKickoffRead, logo:NFL_LOGO, esc:escAttr, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
+    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, stubContent:(fn)=>{ renderContent=fn; }, setLiveView:(v)=>{ currentProjViewMode=()=>v?'live':'proj'; }, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, punt:gcPuntRead, pen:gcPenaltyRead, kickoff:gcKickoffRead, logo:NFL_LOGO, esc:escAttr, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, wpInfo:gcWinProbInfo, wpIdx:(eid)=>_gcd.wpPts[eid], wpJump:gcWinProbJump, replayState:()=>_gcd.replay, clearReplay:()=>{ _gcd.replay=null; }, driveInView:gcDriveInView, wpPick:(eid,i)=>{ _gcd.wpPick=_gcd.wpPick||{}; if(i==null) delete _gcd.wpPick[eid]; else _gcd.wpPick[eid]=i; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, scrolled:gcFeedScrolled, watch:gcFeedWatchScroll, setTab:gcdSetTab, condensed:()=>({on:!!_gcd.condensed, short:!!_gcd.condensedShort}), setCondensed:(v)=>{ _gcd.condensed=v; _gcd.condensedShort=false; }, replayPlay:gcReplayPlay, countPaints:(fn)=>{ renderRightSidebar=fn; }, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -253,7 +253,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   await settle();
   chk(app.behind(gLag)===true && app.catchUp(gLag)===true && nSum()===c0+2, 'still behind after it lands → the next tick reads again (until the play is there)');
   chk(app.behind(Object.assign(app.GAME('in'), {sit:{lastPlayId:''}}))===false && app.behind(app.GAME('post'))===false, 'no last play on the board, or no situation: never behind');
-  chk(app.POLL===5000, 'the live poll ticks every 5 seconds');
+  chk(app.POLL===10000, 'the live poll ticks every 10 seconds (a play lands every 20–40 s; the radio is what a phone pays for)');
 
   console.log('=== live: the fantasy pane scores the box score, not Sleeper\'s trailing rows ===');
   app.setSum('401872925', SUM);
@@ -273,7 +273,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   app.setBoardAt(Date.now()-4000); app.setSum('401872925', SUM);
   const st=app.fresh('401872925');
   chk(/class="tc-fresh"/.test(st) && /onclick="tcRefreshNow\(event\)"/.test(st) && /tc-ico/.test(st) && /tc-fresh-t">just now</.test(st), 'the stamp: the refresh mark and the age of the newest read (the summary, cached just now)');
-  chk(/tc-fresh-t">(3|4|5)s ago</.test(app.fresh('')), 'without a picked game it is the board\'s age — the ticking heartbeat');
+  chk(/tc-fresh-t">(just now|5s ago)</.test(app.fresh('')), 'without a picked game it is the board\'s age — the heartbeat, in five-second steps');
   const sitLive=app.sitHTML(Object.assign(app.GAME('in'), {sit:LIVE3.sit}));
   chk(/gcf-now-clock/.test(sitLive) && /tc-fresh/.test(sitLive) && !/tc-fresh/.test(app.sitHTML(app.GAME('post'))), 'the situation line carries the mark, live games only');
   const half=app.sitHTML(Object.assign(app.GAME('in'), {sit:Object.assign({}, LIVE3.sit, {phase:'Halftime', ddt:'', spot:'', poss:'', clock:'0:00'})}));
@@ -448,7 +448,15 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const noYac=app.drive(app.GAME('post'), toD([P('yc4',1,'Pass Reception','J.Burrow pass deep left to T.Higgins to TB 20 for 40 yards.',40,60)], ''));
   chk(!/gc-seg-yac/.test(noYac) && /gc-seg-last gc-seg-air" d="M[^"]*C/.test(noYac), 'no yards after the catch charted: one arc, as before');
 
-  console.log('=== a punt: the kick to where it was fielded, then the return the other way ===');
+  console.log('=== the Rams are "LA" in the words: a kick to LA 4 is a kick to the Rams\' 4 ===');
+  // BUF @ LAR 2026 wk 5: every kickoff to the Rams drew at the Bills' end because "LA" was
+  // not the drive's "LAR" — the landing spot read as the other club's 4
+  const ko=app.kickoff('T.Bass kicks 61 yards from BUF 35 to LA 4. J.Whittington to LA 29 for 25 yards (M.Hoecht).', 'LAR');
+  chk(ko && ko.origin===65 && ko.landYd===4 && ko.endYd===29 && ko.returnYds===25 && ko.returner==='J.Whittington',
+      `kicked from the Bills' 35 (65 in the Rams' yards), fielded at the Rams' 4, returned to the 29 (${ko&&[ko.origin,ko.landYd,ko.endYd].join('/')})`);
+  const pLA=app.punt('E.Evans punts 45 yards to LA 20, Center-J.Cardona. J.Whittington to LA 31 for 11 yards.', 'BUF');
+  chk(pLA && pLA.landYd===80 && pLA.endYd===69, "a punt the other way reads the Rams' 20 as the Bills' 80");
+
   const punR=app.punt('M.Araiza punts 41 yards to TB 28, Center-J.Winchester. A.Bachman to TB 42 for 14 yards (E.Downs; C.McDonald).', 'CIN');
   chk(punR && punR.catchYd===72 && punR.returner==='A.Bachman', 'a punt read from the words: where it was fielded, and by whom');
   const retD=toD([P('r1',1,'Rush','C.Brown left end for 5 yards.',5,55),
@@ -456,6 +464,27 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const rh=app.drive(app.GAME('post'), retD);
   chk(/gc-seg-kick" d="M[^"]*Q/.test(rh) && /gc-seg-last gc-seg-ret" d="M[^"]*L[^"]*" fill="none" stroke="#39c15a"/.test(rh) && /A\. Bachman 14 yd return/.test(rh), 'the punt arcs to where it was fielded (static), the return runs on in green (animated), the label names the returner and the yards');
   chk(rh.includes(`<image href="${app.esc(app.logo('TB'))}"`) && !rh.includes(`<image href="${app.esc(app.logo('CIN'))}"`), 'the pin wears the receiving club\'s own logo, not the punting team\'s');
+  // BUF @ LAR 2026 wk 5: ESPN stamped the punt's yardsToEndzone from the RECEIVING side (13 at
+  // the Rams' own 13), which put the snap at the far end of the field — the drive line ran the
+  // whole field to it and the kick arced from there. The words place the snap.
+  const flipD=toD([P('f1',1,'Rush','K.Williams up the middle to CIN 13 for 3 yards.',3,90),
+    P('f2',2,'Punt','E.Evans punts 62 yards to BUF 25, Center-J.Cardona. G.Dortch pushed ob at BUF 39 for 14 yards (D.Connors; T.Higbee).',62,13,{start:{down:4, distance:4, yardsToEndzone:13, possessionText:'CIN 13', shortDownDistanceText:'4th & 4'}})], 'PUNT');
+  const fpH=app.drive(app.GAME("post"), flipD);
+  const kick=/gc-seg-kick" d="M([\d.]+),([\d.]+) Q([\d.]+),(-?[\d.]+) ([\d.]+),([\d.]+)"/.exec(fpH);   // the control point sits above the SVG's top edge now, a negative y
+  const ret=/gc-seg-last gc-seg-ret" d="M([\d.]+),[\d.]+ L([\d.]+),/.exec(fpH);
+  // CIN is the home side here, driving right → left: the snap sits at its own 13 on the right
+  chk(kick && Number(kick[1])>230 && Number(kick[5])<Number(kick[1])-100, `the snap sits at the kicking club's own 13 whatever yardsToEndzone says, and the kick flies downfield from there (x ${kick&&kick[1]} → ${kick&&kick[5]})`);
+  chk(ret && Number(ret[2])>Number(ret[1]) && Math.abs(Number(ret[1])-Number(kick[5]))<0.2, 'the return starts where the ball was fielded and runs back the other way');
+  // the arc's peak sits halfway between the lane (y 67) and the control point: a control at
+  // y -5 or above puts the peak at y 31 or higher, clear of the field's top edge (y 34) and
+  // under the yard numbers (y ~17)
+  chk(kick && Number(kick[4])<=-5, `a punt hangs high: the arc's peak clears the field's top edge (control y ${kick&&kick[4]}, a pass's control tops out at 43)`);
+  const koArcD=toD([P('k1',1,'Kickoff','T.Bass kicks 61 years from BUF 35 to CIN 4. J.Whittington to CIN 29 for 25 yards (M.Hoecht).'.replace('years','yards'),25,96,{start:{down:0, distance:0, yardsToEndzone:96, possessionText:'CIN 4', shortDownDistanceText:''}})], 'TD');
+  const koArcH=app.drive(app.GAME('post'), koArcD);
+  const kkick=/gc-seg-kick" d="M([\d.]+),([\d.]+) Q([\d.]+),(-?[\d.]+) ([\d.]+),([\d.]+)"/.exec(koArcH);
+  chk(kkick && Number(kkick[4])<=1 && Number(kkick[4])>Number(kick[4])-40, `a kickoff hangs high too, a little under a punt (control y ${kkick&&kkick[4]})`);
+  const prog=/gc-seg-prog" d="M([\d.]+),[\d.]+ L([\d.]+),/.exec(fpH);
+  chk(prog && Math.abs(Number(prog[2])-Number(kick[1]))<0.2, 'the drive line ends at the real snap, not across the field');
 
   console.log('=== a punt fair caught: no return, just the credit ===');
   const fcD=toD([P('c1',1,'Rush','C.Brown left end for 5 yards.',5,55),
@@ -567,7 +596,9 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   console.log('=== fixed orientation: away on the left, home on the right, never flipped ===');
   const teamD=(team,plays,result)=>({drives:{previous:[{id:'o'+team, team:{abbreviation:team}, description:'x', result:result||'', plays}]}});
   const one=[P('s1',1,'Rush','C.Brown left end for 5 yards.',5,55)];
-  const awayDrive=app.drive(app.GAME('post'), teamD('TB', JSON.parse(JSON.stringify(one))));
+  // the same own-45 yard line, named the way each club's play text names it
+  const oneAway=[P('s1',1,'Rush','C.Brown left end for 5 yards.',5,55,{start:{down:1, yardsToEndzone:55, shortDownDistanceText:'1st & 10', possessionText:'TB 45'}})];
+  const awayDrive=app.drive(app.GAME('post'), teamD('TB', oneAway));
   const homeDrive=app.drive(app.GAME('post'), teamD('CIN', JSON.parse(JSON.stringify(one))));
   const startX=(svg)=>Number((/<circle cx="([\d.]+)" cy="[\d.]+" r="3.4" fill="#39c15a"/.exec(svg)||[])[1]);
   chk(startX(awayDrive) < startX(homeDrive), `the away offense sits left of where the home offense would from the same yard line (${startX(awayDrive)} < ${startX(homeDrive)})`);
@@ -641,7 +672,37 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   console.log('=== desktop feed: the field is pinned up top, the plays scroll on their own ===');
   app.setSum('401872925', SUM); app.setTab('feed');
   const ghFeed=app.gameHTML(app.GAME('post'));
-  chk(/class="gc-feedview"/.test(ghFeed) && /gc-feedview-head/.test(ghFeed) && /gc-feedview-feed/.test(ghFeed) && ghFeed.indexOf('gc-drive-svg')<ghFeed.indexOf('gc-feedview-feed') && ghFeed.indexOf('gc-feedview-head')<ghFeed.indexOf('gcf'), 'the feed tab pins the hero + field + tabs in a head, and the plays scroll in their own window below');
+  chk(/class="gc-feedview( gc-notrans)?"/.test(ghFeed) && /gc-feedview-head/.test(ghFeed) && /gc-feedview-feed/.test(ghFeed) && ghFeed.indexOf('gc-drive-svg')<ghFeed.indexOf('gc-feedview-feed') && ghFeed.indexOf('gc-feedview-head')<ghFeed.indexOf('gcf'), 'the feed tab pins the hero + field + tabs in a head, and the plays scroll in their own window below');
+  console.log('=== the pinned block condenses while the plays scroll; a tapped play paints at once ===');
+  chk(/<div class="gc-feedview-feed" onscroll="gcFeedScrolled\(this\)">/.test(ghFeed) && !/gc-condensed/.test(ghFeed), 'the plays\' window reports its scroll; nothing condensed at the top');
+  const fvStub={cls:new Set(), classList:{toggle(c,v){ if(v) fvStub.cls.add(c); else fvStub.cls.delete(c); }, remove(c){ fvStub.cls.delete(c); }, add(c){ fvStub.cls.add(c); }}};
+  const feedStub=(y)=>({scrollTop:y, closest:()=>fvStub});
+  app.scrolled(feedStub(60));
+  chk(app.condensed().on && fvStub.cls.has('gc-condensed'), 'scrolled 60px into the plays: the block condenses, in place, without a repaint');
+  chk(/class="gc-feedview gc-condensed/.test(app.gameHTML(app.GAME('post'))), 'a repaint keeps it condensed');
+  app.scrolled(feedStub(2));
+  chk(!app.condensed().on && !fvStub.cls.has('gc-condensed'), 'scrolled back to the top: it opens up again');
+  // the phone: the page scrolls and the block is sticky — the feed view's top passing the window's top is the signal
+  app.setCondensed(false);
+  // the phone never condenses: the top part scrolls away and the stick part pins itself; the
+  // watcher only says whether it IS pinned, so the slim score strip can fade in
+  const stickStub={top:0, getBoundingClientRect(){ return {top:stickStub.top}; }};
+  const fvPhone={top:0, classList:{toggle(c,v){ fvStub.cls[v?'add':'delete'](c); }, remove(c){ fvStub.cls.delete(c); }, add(c){ fvStub.cls.add(c); }}, getBoundingClientRect(){ return {top:fvPhone.top}; }, querySelector(q){ return q==='.gc-head-stick'?stickStub:null; }};
+  const qsOld=document.querySelector; document.querySelector=(q)=>q==='.gc-feedview'?fvPhone:qsOld(q);
+  fvPhone.top=-300; stickStub.top=0; app.watch(global.window);
+  chk(!app.condensed().on && fvStub.cls.has('gc-stuck'), 'the phone page scrolled past the hero: nothing condenses, the stick part is flagged pinned (the strip fades in)');
+  chk(/class="gc-feedview gc-stuck/.test(app.gameHTML(app.GAME('post'))), 'a repaint while pinned (a play tapped for replay) keeps the strip: the pane is built with the flag');
+  fvStub.cls.delete('gc-stuck'); fvPhone.top=-300; stickStub.top=0; app.watch(global.window);
+  chk(fvStub.cls.has('gc-stuck'), 'and the watcher puts the flag back even when the state already said pinned');
+  fvPhone.top=40; stickStub.top=260; app.watch(global.window);
+  chk(!fvStub.cls.has('gc-stuck'), 'scrolled back up: the flag clears');
+  document.querySelector=qsOld;
+  app.setCondensed(true); app.setTab('stats'); chk(!app.condensed().on, 'switching Feed → Stats (and back) starts the block open, not stuck condensed');
+  app.setCondensed(false);
+  let paints=0; app.countPaints(()=>{ paints++; }); app.setDown(true);
+  app.replayPlay('401872925', mini.drives.previous[0].plays[0].id);
+  chk(paints===1 && app.replayState() && app.replayState().playId===String(mini.drives.previous[0].plays[0].id), 'a tapped play paints at once, even under a finger (the idle gate used to hold it until the tap ended)');
+  app.setDown(false); app.clearReplay();
   app.setTab(null);
 
   const posts=[...dc.matchAll(/<g class="gc-posts"><path d="M([\d.]+),([\d.]+) V([\d.]+) M([\d.]+),([\d.]+) L([\d.]+),([\d.]+) M[\d.]+,[\d.]+ V[\d.]+ M[\d.]+,[\d.]+ V[\d.]+"/g)].map(m=>m.slice(1).map(Number));
@@ -652,9 +713,35 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(/gc-wp-head/.test(w0) && /<b>6%<\/b>/.test(w0) && /<b>94%<\/b>/.test(w0) && !/<svg/.test(w0) && /aria-expanded="false"/.test(w0), 'win probability folded by hand: the two numbers, no chart (TB 6%, CIN 94% at the end)');
   app.wpOpen(true); const w1=app.wp(app.GAME('post'), SUM);
   const cy=Number((w1.match(/<circle cx="[\d.]+" cy="([\d.]+)"/)||[])[1]);
-  chk(/<svg/.test(w1) && cy>40 && /aria-expanded="true"/.test(w1) && (w1.match(/<image /g)||[]).length===2, 'open: the chart with both clubs\' marks on the axis, and the line ends near the bottom — the home side, who is winning');
+  chk(/<svg viewBox="0 0 360 84" class="gc-wp-svg"/.test(w1) && /class="gc-wp-lab">6%<\/text>/.test(w1) && /class="gc-wp-lab">94%<\/text>/.test(w1) && /class="gc-wp-lab2">(Bengals|CIN)<\/text>/.test(w1) && !/<image/.test(w1) && /<circle cx="294\.0" cy="7[0-9]\.[0-9]"/.test(w1), 'open: the chart with each side’s chance and nickname at the right edge, no logos on the axis, and the line ending near the bottom — the home side, who is winning');
   const hc=(typeof pwTeamColor==='function')?'':'';
-  chk(/,8 L[\d.]+,8 Z" fill="#/.test(w1) && !/,64 L[\d.]+,64 Z" fill="#/.test(w1) && /x="338"/.test(w1), 'the winner\'s share is filled in the winner\'s colour (the home side wins here: from the line up to the top), the clubs\' marks on the right');
+  chk(/<linearGradient id="gcWpG401872925"/.test(w1) && /fill="url\(#gcWpG401872925\)"/.test(w1) && /stop-opacity="0.92"/.test(w1) && /stroke-dasharray="2 4"/.test(w1) && /Z" fill="url\(#gcWpG401872925\)"\/>/.test(w1) && / L294\.0,10 L0\.0,10 Z/.test(w1), 'the winner’s share is filled in the winner’s colour as a bright gradient off the line (the home side wins here: from the line up to the top), dotted gridlines across');
+  console.log('=== a tap on the line names the play ===');
+  chk(/<rect class="gc-wp-hit"[^>]*onpointerdown="gcWinProbTap\(event,'401872925'\)"[^>]*onpointermove="gcWinProbTap\(event,'401872925'\)"/.test(w1) && /tap the line for the play/.test(w1) && !/gc-wp-call/.test(w1), 'the open chart carries a hit area for taps and drags, and no bubble until a point is picked');
+  const ix=app.wpIdx('401872925');
+  const k=ix.pts.findIndex(p=>ix.plays[p.pid]);
+  chk(ix && ix.pts.length===15 && k>=0, `every point is indexed by its playId; ${ix.pts.filter(p=>ix.plays[p.pid]).length} of ${ix.pts.length} match a play in the (trimmed) fixture`);
+  const inf=app.wpInfo('401872925', k);
+  chk(inf && inf.hasPlay && inf.title && inf.q>=1 && /^\d+:\d\d$/.test(inf.clock) && inf.pct>=50 && inf.pct<=100 && (inf.side==='CIN'||inf.side==='TB'), `a point reads as the play behind it: Q${inf&&inf.q} ${inf&&inf.clock} · ${inf&&inf.title} · ${inf&&inf.side} ${inf&&inf.pct}%`);
+  const inf0=app.wpInfo('401872925', 0);
+  chk(inf0 && inf0.delta===0 && inf0.pct===62 && inf0.side==='CIN', 'the first point has no move (62% CIN at kickoff)');
+  const inf1=app.wpInfo('401872925', 1);
+  chk(inf1 && inf1.pct===53 && inf1.delta===-9, 'the second point: CIN 53%, a 9-point move against them');
+  chk(app.wpInfo('401872925', 99)===null && app.wpInfo('nope', 0)===null, 'no such point, no such game: null');
+  app.wpPick('401872925', k);
+  const w2=app.wp(app.GAME('post'), SUM);
+  chk(/<g class="gc-wp-mark"><line/.test(w2) && /<div class="gc-wp-call[^"]*" style="left:[\d.]+%"/.test(w2) && w2.indexOf(app.esc(inf.title).slice(0,20))>0 && new RegExp(`<b>${inf.pct}%</b>`).test(w2), 'with a point picked the chart repaints with the marker on the point and the bubble naming the play, the score and the chance');
+  app.wpPick('401872925', null);
+  chk(!/gc-wp-call/.test(app.wp(app.GAME('post'), SUM)), 'closing the bubble clears the marker too');
+  console.log('=== the field jumps to the play ===');
+  app.clearReplay();
+  chk(app.wpJump('401872925', k)===true && app.replayState() && app.replayState().playId===ix.pts[k].pid && app.replayState().eid==='401872925', 'a tapped point pins the field to its play, the way a tap on the feed does');
+  const dv=app.driveInView(app.GAME('post'), SUM);
+  chk(dv && dv.replay===true && dv.focusId===ix.pts[k].pid && dv.plays[dv.plays.length-1].id===ix.pts[k].pid, 'the drive in view is that play’s drive, cut off at the play');
+  const kNo=ix.pts.findIndex(p=>!ix.plays[p.pid]);
+  app.clearReplay();
+  chk(kNo>=0 && app.wpJump('401872925', kNo)===false && !app.replayState(), 'a point ESPN gave no play for leaves the field where it is');
+  chk(app.wpJump('401872925', 99)===false && app.wpJump('nope', 0)===false, 'no such point or game: nothing pinned');
   app.wpOpen(false);
   const lp1=app.lastPlay(Object.assign(app.GAME('in'), {sit:{period:4, clock:'2:50', lastPlayId:'z', lastPlay:{id:'z', type:'Extra Point Good', text:'E.McPherson extra point is GOOD.', yds:0, team:'CIN', athletes:[], down:0, ddt:'', spot:'', yte:null}}}), SUM);
   chk(/LAST PLAY/.test(lp1) && /End zone/.test(lp1) && /E\. McPherson XP, good/.test(lp1) && /tc-fresh/.test(lp1), 'the last-play line: LIVE, the spot, the play, the stamp');

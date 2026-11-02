@@ -47,7 +47,7 @@ def chk(c, l):
     global fails
     print(("  PASS: " if c else "  FAIL: ") + l); fails += (0 if c else 1)
 
-chk(ins.PLAYER_WEEK_COLS[-2:] == ["snaps", "snap_pct"], "the snap columns are the last two, so older rows read them as absent")
+chk(ins.PLAYER_WEEK_COLS[-5:] == ["snaps", "snap_pct", "pass_2pt", "rush_2pt", "rec_2pt"], "the snap and two-point columns trail the usage line, so older rows read them as absent")
 
 snaps = pd.DataFrame({
     "game_type": ["REG", "REG", "REG", "REG", "REG"],
@@ -79,6 +79,46 @@ ins.merge_snaps(players2, m, {}, {})
 w3 = players2["00-0030506"]["w"]["3"]
 chk(len(w3) < len(ins.PLAYER_WEEK_COLS) or w3[ci["snap_pct"]] is None, "a week the snap file does not cover carries no snap_pct (unknown, not 0)")
 chk(ins.merge_snaps({"x": {"w": {}}}, {}, {}, {}) == {"x": {"w": {}}}, "no snap counts yet → the rows are untouched")
+
+# ── build_player_weekly: two-point tries are scored, never counted as targets or carries;
+#    a lateral touchdown belongs to the lateral man (2026 wk 3, Evans → Samuel) ──
+ins._nfl._pos_map = lambda season: {"q1": "QB", "w1": "WR", "w9": "WR", "r1": "RB"}
+ins._nfl._name_map = lambda season: {"q1": "qb one", "w1": "mike evans", "w9": "deebo samuel", "r1": "back"}
+ins.snap_counts_by_gsis = lambda season: {}
+base = dict(week=1, season_type="REG", posteam="SF", defteam="ARI", game_id="2026_01_ARI_SF", game_date="2026-09-20",
+            pass_attempt=0, complete_pass=0, sack=0, passing_yards=0.0, receiving_yards=0.0, rushing_yards=0.0,
+            air_yards=0.0, pass_touchdown=0, rush_touchdown=0, interception=0, epa=0.0, vegas_wp=0.5,
+            play_type="pass", two_point_attempt=0, two_point_conv_result=None,
+            passer_player_id=None, receiver_player_id=None, rusher_player_id=None, td_player_id=None)
+plays = [
+    dict(base, pass_attempt=1, complete_pass=1, passing_yards=2.0, receiving_yards=2.0, pass_touchdown=1,
+         passer_player_id="q1", receiver_player_id="w1", td_player_id="w9"),            # the lateral TD
+    dict(base, pass_attempt=1, complete_pass=1, passing_yards=12.0, receiving_yards=12.0, pass_touchdown=1,
+         passer_player_id="q1", receiver_player_id="w1", td_player_id="w1"),            # a real one
+    dict(base, pass_attempt=1, two_point_attempt=1, two_point_conv_result="success",
+         passer_player_id="q1", receiver_player_id="w1"),                               # 2-pt pass, good
+    dict(base, pass_attempt=1, two_point_attempt=1, two_point_conv_result="failure",
+         passer_player_id="q1", receiver_player_id="w9"),                               # 2-pt pass, no good
+    dict(base, play_type="run", two_point_attempt=1, two_point_conv_result="success", rusher_player_id="r1"),
+    dict(base, play_type="run", rushing_yards=5.0, rusher_player_id="r1"),
+]
+pbp = pd.DataFrame(plays)
+for c in ("_comp", "_close", "_garbage", "_over"):
+    pbp[c] = False
+built = ins.build_player_weekly(2026, pbp)
+pw = built["players"] if isinstance(built, dict) and "players" in built else built
+ci = {c: i for i, c in enumerate(ins.PLAYER_WEEK_COLS)}
+w1, q1, r1 = (pw[k]["w"]["1"] for k in ("w1", "q1", "r1"))
+chk(w1[ci["tgt"]] == 2 and w1[ci["rec"]] == 2 and w1[ci["rec_td"]] == 1 and w1[ci["rec_2pt"]] == 1,
+    "Evans: two targets (the 2-pt try is not one), one TD (the lateral is Samuel's), one 2-pt catch")
+chk("w9" not in pw, "Samuel: a failed 2-pt target is no line at all")
+chk(q1[ci["pass_att"]] == 2 and q1[ci["pass_td"]] == 2 and q1[ci["pass_2pt"]] == 1,
+    "the QB keeps both passing TDs (the lateral is still his throw) and gets the conversion")
+chk(r1[ci["carry"]] == 1 and r1[ci["rush_2pt"]] == 1, "the back: one carry, one rushed conversion")
+dvp = ins.build_def_vs_pos(2026, pbp)["teams"]["ARI"]
+dci = {c: i for i, c in enumerate(ins.DVP_COLS)}
+chk(dvp["WR"]["1"][dci["tgt"]] == 2 and dvp["WR"]["1"][dci["rec_td"]] == 1 and dvp["QB"]["1"][dci["pass_td"]] == 2,
+    "def-vs-pos: the same rules — two WR targets, one WR touchdown, two passing touchdowns allowed")
 
 print(f"RESULT: {'PASS' if not fails else str(fails) + ' FAIL'}")
 sys.exit(1 if fails else 0)

@@ -705,3 +705,26 @@ tr.pcard-future-row td{opacity:.75;}
 /* The pre-snap grade's asterisk: draft capital + college line + level, not NFL snaps. */
 .olc-ast{font-size:.55em;line-height:0;color:var(--muted);margin-left:1px;cursor:help;vertical-align:super;}
 .olc-rookie-note b{color:var(--text);}
+
+/* the contract band opens the year table */
+.pcard-contract-tap{cursor:pointer;}
+.pcard-contract-tap:hover{background:color-mix(in srgb,var(--surface2) 70%,var(--accent) 8%);}
+.pcard-ct-chev{margin-left:4px;color:var(--muted);font-size:10px;transition:transform .15s;flex:none;}
+.pcard-contract-tap.open .pcard-ct-chev{transform:rotate(180deg);}
+.pcard-ct-detail{padding:4px 10px 8px;background:var(--surface2);border-bottom:1px solid var(--border);}
+.ct-tbl{width:100%;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums;}
+.ct-tbl th,.ct-tbl td{padding:4px 5px;text-align:left;border-top:1px solid var(--border);vertical-align:top;}
+.ct-tbl thead th{border-top:none;font-size:9.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);}
+.ct-tbl .n{text-align:right;white-space:nowrap;}
+.ct-tbl .ct-yr{white-space:nowrap;}
+.ct-age{font-size:10px;color:var(--muted);margin-left:5px;}
+.ct-note{display:block;font-size:9.5px;color:var(--muted);font-weight:500;white-space:normal;}
+.ct-pct{display:block;font-size:9.5px;color:var(--muted);font-weight:500;}
+.ct-tbl tr.ct-now td{background:color-mix(in srgb,var(--accent) 12%,transparent);}
+.ct-tbl tr.ct-void td{color:var(--muted);}
+.ct-voidlbl{font-size:9.5px;font-weight:900;letter-spacing:.4px;color:var(--warn);}
+.ct-neg{color:var(--danger);}
+.ct-tbl tr.ct-out td{background:color-mix(in srgb,var(--warn) 14%,transparent);font-size:10.5px;color:var(--muted);text-align:center;padding:5px;}
+.ct-out-lbl{font-weight:900;letter-spacing:.5px;color:var(--warn);}
+.ct-tbl tr.ct-out td b{color:var(--text);}
+@media (max-width:560px){ .ct-tbl .ct-l{display:none;} .ct-tbl{font-size:11px;} }

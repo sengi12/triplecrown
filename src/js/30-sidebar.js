@@ -264,7 +264,7 @@ function renderContent(){
     ? _renderAdvPowerScore(t, activeSharp(), { shieldOnly:true })
     : '';
   const powerScoreInline = isRef
-    ? `<div class="season-power">${powerScoreBadge}<span class="season-power-text">Power Score</span></div>`
+    ? `<div class="season-power">${powerScoreBadge}<span class="season-power-text">Power Score</span><button class="season-power-link" onclick="sosOpenPower('${t}')" title="Every team's Power Score through the season, ${t} lit">all teams ›</button></div>`
     : '';
   const seasonBanner = isRef
     ? `<div class="season-readonly">
