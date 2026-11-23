@@ -81,7 +81,8 @@ The refresh warns `⚠ … is stale` and the workflow opens one issue ("Refresh 
   the former job of each new head coach.
 - `ALLPRO_OL` in `src/nflverse/ol_grades_pipeline.py` — the All-Pro line.
 - `data/espn_win_rates_<season>.csv` — ESPN's pass/run block win rates for the OL grades.
-Then `gh workflow run refresh-seed.yml -f force=nflverse,ol`.
+Then `gh workflow run refresh-seed.yml -f force=nflverse` (that wipes `cache/nflverse`, the
+derived OL grades with it — there is no separate `ol` source, and naming one exits 2).
 
 ## Later
 

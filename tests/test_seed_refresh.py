@@ -361,6 +361,95 @@ _state["sources"]["inseason"]["last"] = time.time() - 26 * 3600
 _ok, _why = SR.due("inseason", SR.SOURCES["inseason"], _state, time.time())
 chk(_ok, "…but a day later the ceiling rebuilds it regardless")
 
+print("\n=== TEST 16b: the in-season rebuild re-fetches EVERY file the sidecar reads ===")
+# September → 2026-11-23: the source watched five releases and invalidated one of them. The
+# nflverse cache is download-once, so a snap_counts / nextgen_stats / pfr_advstats release
+# moving triggered a rebuild that re-read the old file — weeks 8–10 carried no snaps, no NGS
+# and no defender logs until a forced five-season `nflverse` wipe, and week 11 lost them again.
+_Y = SR._CUR_SEASON
+_live = [f"nflverse/raw/pbp/pbp_{_Y}.csv.gz"] + [f"nflverse/raw/aux/0123abcd_{b}" for b in (
+    f"roster_{_Y}.csv", f"roster_weekly_{_Y}.parquet", "games.csv", f"snap_counts_{_Y}.parquet",
+    f"advstats_week_pass_{_Y}.parquet", f"advstats_week_rush_{_Y}.parquet", f"advstats_week_def_{_Y}.parquet",
+    "advstats_season_pass.csv", "advstats_season_rush.csv", "advstats_season_def.csv",
+    "ngs_passing.csv.gz", "ngs_rushing.csv.gz", "ngs_receiving.csv.gz",
+    f"ftn_charting_{_Y}.csv", f"stats_player_week_{_Y}.parquet", "players.parquet")]
+_frozen = [f"nflverse/raw/pbp/pbp_{_Y - 1}.csv.gz"] + [f"nflverse/raw/aux/0123abcd_{b}" for b in (
+    f"roster_{_Y - 1}.csv", f"roster_weekly_{_Y - 1}.parquet", f"snap_counts_{_Y - 1}.parquet",
+    f"advstats_week_def_{_Y - 1}.parquet", f"ftn_charting_{_Y - 1}.csv",
+    f"stats_player_week_{_Y - 1}.parquet", f"pbp_participation_{_Y - 1}.csv")]
+with tempfile.TemporaryDirectory() as _td:
+    _real_cache = SR.CACHE
+    SR.CACHE = _td
+    try:
+        for _rel in _live + _frozen:
+            _p = os.path.join(_td, *_rel.split("/"))
+            os.makedirs(os.path.dirname(_p), exist_ok=True)
+            with open(_p, "w") as f:
+                f.write("x")
+        SR.invalidate(SR.SOURCES["inseason"])
+        for _rel in _live:
+            chk(not os.path.exists(os.path.join(_td, *_rel.split("/"))),
+                f"re-fetched on an in-season rebuild: {_rel.rsplit('/', 1)[1].replace('0123abcd_', '')}")
+        for _rel in _frozen:
+            chk(os.path.exists(os.path.join(_td, *_rel.split("/"))),
+                f"a completed season's file is left alone: {_rel.rsplit('/', 1)[1].replace('0123abcd_', '')}")
+    finally:
+        SR.CACHE = _real_cache
+
+
+def _side(weeks=(1, 2), parts=("team", "ngs_weekly", "def_weekly"), rows=60, snaps=40, drop=()):
+    """A sidecar-shaped dict: `rows` player-weeks, each carrying `snaps`."""
+    d = {"season": 2026, "weeks": list(weeks), "adv_weekly": {"2026": {"weeks": list(weeks)}},
+         "player_weekly": {"cols": ["tgt", "snaps", "snap_pct"],
+                           "players": {f"00-{i:07d}": {"n": f"p{i}", "p": "WR", "t": "KC",
+                                                       "w": {"1": [3, snaps, 55]}} for i in range(rows)}},
+         "def_vs_pos": {"teams": {"KC": {"WR": {"1": [1]}}}}, "schedule": {"KC": {"1": "DEN"}},
+         "nflverse": {"2026": {p: {"x": 1} for p in parts}}}
+    for k in drop:
+        d.pop(k, None)
+    return d
+
+
+# Re-fetching has a price: every part is fail-soft, so a download that drops mid-run omits
+# its part and the rest would ship. The guard keeps the previous sidecar instead.
+chk(SR.sidecar_snap_rows(_side()) == 60 and SR.sidecar_snap_rows(_side(snaps=0)) == 0
+    and SR.sidecar_snap_rows({"weeks": []}) == 0, "snap coverage is counted off the player-week rows")
+chk(SR.sidecar_live_parts(_side()) == {"team", "ngs_weekly", "def_weekly"} and SR.sidecar_live_parts({}) == set(),
+    "the live parts are read from the sidecar's own season")
+ok, _ = _side_case(_side(), _side(weeks=(1, 2, 3), rows=90))
+chk(ok, "a sidecar that grew passes")
+ok, note = _side_case(_side(), _side(parts=("team", "def_weekly")))
+chk(not ok and "ngs_weekly" in (note or ""), "a live part that vanished (NGS failed to download) is REJECTED, by name")
+ok, note = _side_case(_side(), _side(drop=("def_vs_pos",)))
+chk(not ok and "def_vs_pos" in (note or ""), "…and so is a top-level block that vanished")
+ok, note = _side_case(_side(), _side(snaps=0))
+chk(not ok and "snap" in (note or ""), "snap counts collapsing to nothing is REJECTED (a failed snap_counts read)")
+ok, _ = _side_case(_side(), _side(rows=57))
+chk(ok, "a few rows moving on a stat correction passes (90% floor)")
+ok, _ = _side_case(_side(snaps=0), _side(snaps=0))
+chk(ok, "no snaps before and none now passes (opening week, before the file exists)")
+ok, _ = _side_case(_side(), dict(_side(weeks=(1,), parts=(), rows=0), season=2027))
+chk(ok, "none of it applies across a season change")
+
+print("\n=== TEST 16c: a held-back source is retried daily, not on every look ===")
+# KeepTradeCut, 2026-09-21 → 11-23: past its interval, failing its guard, never advancing —
+# so every half-hourly look found it due and ran the whole build. The probe's cheap exit
+# ("Nothing is stale") did not fire once in two months.
+_now = time.time()
+_ktc = SR.SOURCES["ktc"]
+_st = {"sources": {"ktc": {"last": _now - 92 * SR.DAY}}}
+_ok, _ = SR.due("ktc", _ktc, _st, _now)
+chk(_ok, "92 days past a 30-day interval is due")
+_st["sources"]["ktc"]["attempt"] = _now - 2 * 3600
+_ok, _why = SR.due("ktc", _ktc, _st, _now)
+chk(not _ok and "held back" in _why, "…but not two hours after an attempt that was held back")
+_st["sources"]["ktc"]["attempt"] = _now - 25 * 3600
+_ok, _ = SR.due("ktc", _ktc, _st, _now)
+chk(_ok, "…and due again a day after that attempt")
+_ok, _ = SR.due("ktc", _ktc, {"sources": {"ktc": {"attempt": _now - 60}}}, _now)
+chk(not _ok, "a never-refreshed source that was just held back waits too")
+chk(SR.RETRY_GAP == SR.DAY, "the retry gap is a day")
+
 print("\n=== TEST 17: a trimmed-but-complete ECR list is not a failed scrape ===")
 # 2026-09-14: FantasyPros cut dynasty superflex from 549 to 427 players after week 1 — ranks
 # 1..427 with nothing missing. Three refreshes in a row were rejected at 78% of previous.
