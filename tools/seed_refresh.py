@@ -206,11 +206,35 @@ SOURCES = {
     # built from (SIDECAR_UPSTREAM) and rebuilds when one of them has moved since the last
     # bake — with a daily ceiling in case timestamp.json is ever unreachable or wrong.
     # The workflow wakes every two hours in season to look; a look costs nothing.
-    # Invalidates only the CURRENT season's pbp/roster raw files, so no other season re-fetches.
+    #
+    # EVERY file the sidecar reads has to be listed here, not just the pbp. The nflverse cache
+    # is download-once (nflverse._cache_remote reuses whatever exists), so a release this
+    # source WATCHES but does not INVALIDATE triggers a rebuild that re-reads the old copy.
+    # That is what happened from September to 2026-11-23: only pbp/roster/games were listed,
+    # so snap counts, Next Gen Stats and PFR's weekly files stayed at whatever a forced
+    # `nflverse` wipe had last fetched — the sidecar recorded today's release stamps, the pulse
+    # said "current", and weeks of snaps / NGS / defender logs were missing until someone
+    # forced the five-season rebuild by hand. The aux cache names files `<md5>_<basename>`,
+    # hence the leading globs. Only the current season's files, plus the handful of
+    # season-spanning ones (NGS, PFR season tables, the players id map) that carry it.
     "inseason": {
         "paths": [f"nflverse/raw/pbp/pbp_{_CUR_SEASON}.csv.gz",
                   f"nflverse/raw/aux/*_roster_{_CUR_SEASON}.csv",
-                  "nflverse/raw/aux/*_games.csv"],
+                  f"nflverse/raw/aux/*_roster_weekly_{_CUR_SEASON}.parquet",
+                  "nflverse/raw/aux/*_games.csv",
+                  # snap_counts: the snap tracker, snap share on every player-week
+                  f"nflverse/raw/aux/*_snap_counts_{_CUR_SEASON}.parquet",
+                  # pfr_advstats: defender logs, QB accuracy band, pressure rates
+                  f"nflverse/raw/aux/*_advstats_week_*_{_CUR_SEASON}.parquet",
+                  "nflverse/raw/aux/*_advstats_season_*.csv",
+                  # nextgen_stats: one file per stat family, every season in it
+                  "nflverse/raw/aux/*_ngs_*.csv.gz",
+                  # ftn_charting: nflverse.py also re-fetches this one itself, but keys that on
+                  # the CALENDAR year — which stops matching the season on 1 January
+                  f"nflverse/raw/aux/*_ftn_charting_{_CUR_SEASON}.csv",
+                  f"nflverse/raw/aux/*_stats_player_week_{_CUR_SEASON}.parquet",
+                  # PFR id → GSIS id: without a fresh copy a mid-season call-up's snaps never join
+                  "nflverse/raw/aux/*_players.parquet"],
         "every": 1 * DAY,       # ceiling only — the trigger is an upstream release moving
         "upstream": ["pbp", "nextgen_stats", "snap_counts", "pfr_advstats", "ftn_charting"],
         "in_season_only": True,     # dormant in the offseason — nothing is moving
@@ -450,10 +474,23 @@ def upstream_damped(name, spec, state, now):
     return False, ""
 
 
+# A source whose block failed its guard keeps its cadence anchor so it is retried — but not
+# on every look. KeepTradeCut's page changed shape on 2026-08-22; from the day its 30-day
+# interval lapsed (09-21) it was "due" on every wake-up, failed, was held back, and was due
+# again half an hour later. The probe never once said "Nothing is stale", so for two months
+# every look installed pandas, rebuilt the seed, ran the twelve-minute suite and fetched
+# keeptradecut.com again. A held-back source now waits this long between attempts.
+RETRY_GAP = 1 * DAY
+
+
 def due(name, spec, state, now):
     """Is this source due for a refresh?  → (bool, reason)"""
     if spec["every"] is None and name != "nflverse":
         return False, "manual-only"
+    tried = state.get("sources", {}).get(name, {}).get("attempt", 0)
+    if tried and 0 <= now - tried < RETRY_GAP:
+        return False, (f"held back {(now - tried) / 3600:.0f}h ago (its guard kept the previous block) "
+                       f"— next attempt {RETRY_GAP / DAY:.0f}d after that one")
     last = state.get("sources", {}).get(name, {}).get("last", 0)
     age = now - last
     if last == 0:
@@ -755,11 +792,47 @@ def check_season_sidecars(old_docs):
     return bad
 
 
+# The sidecar's top-level blocks, and how much of the previous snap coverage must survive.
+# Every part of the sidecar is fail-soft: a companion file that will not download makes its
+# builder print "omitting" and the rest ships. That was harmless while those files were
+# never re-fetched; now that each rebuild downloads them fresh (see the inseason paths), one
+# dropped connection would otherwise publish a sidecar with no snaps or no defender logs —
+# worse than the stale copy it replaced.
+SIDECAR_BLOCKS = ("adv_weekly", "player_weekly", "def_vs_pos", "schedule")
+SIDECAR_SNAPS_FLOOR = 0.9    # stat corrections move a handful of rows; a failed read moves all
+
+
+def sidecar_live_parts(side):
+    """The live nflverse parts a sidecar carries for its own season (team, ngs_weekly, …)."""
+    if not isinstance(side, dict):
+        return set()
+    blk = (side.get("nflverse") or {}).get(str(side.get("season")))
+    return {k for k, v in blk.items() if v} if isinstance(blk, dict) else set()
+
+
+def sidecar_snap_rows(side):
+    """How many player-weeks carry a snap count."""
+    pw = side.get("player_weekly") if isinstance(side, dict) else None
+    if not isinstance(pw, dict):
+        return 0
+    cols = pw.get("cols") or []
+    if "snaps" not in cols:
+        return 0
+    i, n = cols.index("snaps"), 0
+    for p in (pw.get("players") or {}).values():
+        for row in ((p or {}).get("w") or {}).values():
+            if isinstance(row, list) and len(row) > i and isinstance(row[i], (int, float)) and row[i] > 0:
+                n += 1
+    return n
+
+
 def check_inseason_sidecar(old_side):
     """Sidecar-only guard. The additions-style policy (near-empty at week 1 is fine) is
-    implicit — growth and first appearance always pass. Two hard rules: for the SAME season
-    the weeks list must never shrink (a shrunk list = a failed pbp read), and the file may
-    not vanish mid-season. → (ok, note)."""
+    implicit — growth and first appearance always pass. Hard rules, all for the SAME season:
+    the weeks list must never shrink (a shrunk list = a failed pbp read); a block or live
+    part the previous sidecar carried must still be there, and the snap counts must not
+    collapse (either = a companion file that failed to download); and the file may not
+    vanish mid-season. → (ok, note)."""
     try:
         with open(SIDECAR_INSEASON) as f:
             new_side = json.load(f)
@@ -775,6 +848,15 @@ def check_inseason_sidecar(old_side):
         ow, nw = len(old_side.get("weeks") or []), len(new_side.get("weeks") or [])
         if nw < ow:
             return False, f"weeks list shrank {ow} → {nw} for the same season (failed pbp read)"
+        gone = sorted([b for b in SIDECAR_BLOCKS if old_side.get(b) and not new_side.get(b)]
+                      + list(sidecar_live_parts(old_side) - sidecar_live_parts(new_side)))
+        if gone:
+            return False, (f"{', '.join(gone)} vanished for the same season "
+                           f"(a companion file failed to download)")
+        snaps_was, snaps_now = sidecar_snap_rows(old_side), sidecar_snap_rows(new_side)
+        if snaps_was >= 50 and snaps_now < snaps_was * SIDECAR_SNAPS_FLOOR:
+            return False, (f"player-weeks with a snap count fell {snaps_was} → {snaps_now} for the "
+                           f"same season (failed snap_counts read)")
     return True, None
 
 
@@ -997,6 +1079,7 @@ def main():
     for w in warnings:
         log(f"  note: {w}")
     kept_blocks = {}
+    held = set()
     if not ok:
         # One source's bad day must not take the rest of the rebuild down with it: drop the
         # failing block(s) back to the previous seed's copy and validate again.
@@ -1077,6 +1160,12 @@ def main():
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     for name in stale:
         state.setdefault("sources", {})[name] = {"last": int(now), "at": stamp}
+    # A held-back source keeps its anchor (it is still owed a refresh) and gains an attempt
+    # stamp, which due() reads to space the retries out — see RETRY_GAP. A later success
+    # replaces the whole entry above, which clears it.
+    for name in sorted(held):
+        entry = state.setdefault("sources", {}).setdefault(name, {})
+        entry["attempt"], entry["attempt_at"] = int(now), stamp
     for bucket, latest in upstream_latest.items():
         if latest:
             state[bucket] = latest

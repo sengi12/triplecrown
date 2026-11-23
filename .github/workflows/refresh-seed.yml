@@ -231,7 +231,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          lines=$(grep -E "⚠ .* is stale|kept the previous [a-z_]+ block|HC_(PRIOR_JOBS|PLAYCALLERS) is stale" refresh.log || true)
+          lines=$(grep -E "⚠ .* is stale|kept the previous [a-z_]+ block|HC_(PRIOR_JOBS|PLAYCALLERS) is stale|SIDECAR REJECTED" refresh.log || true)
           [ -z "$lines" ] && { echo "nothing stale"; exit 0; }
           title="Refresh needs a hand: stale season inputs"
           open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty' || true)
